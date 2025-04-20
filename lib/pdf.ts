@@ -1,10 +1,17 @@
-import * as pdfjsLib from 'pdfjs-dist';
-import { TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api';
+// Import types only, actual library will be dynamically imported
+import type { TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api';
 
-// Set worker source path for PDF.js
-// This is needed because PDF.js uses web workers
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Dynamic imports that only run on client side
+let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+
+// Initialize PDF.js only on client side
+async function initPdfJs() {
+  if (typeof window !== 'undefined' && !pdfjsLib) {
+    // Dynamically import PDF.js only on the client
+    pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 
+      `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  }
 }
 
 /**
@@ -14,6 +21,13 @@ if (typeof window !== 'undefined') {
  */
 export async function extractTextFromPdf(pdfFile: File): Promise<string> {
   try {
+    // Initialize PDF.js (only on client)
+    await initPdfJs();
+    
+    if (!pdfjsLib) {
+      throw new Error('PDF.js could not be initialized (are you on server side?)');
+    }
+    
     // Convert file to ArrayBuffer
     const arrayBuffer = await fileToArrayBuffer(pdfFile);
     
@@ -30,7 +44,7 @@ export async function extractTextFromPdf(pdfFile: File): Promise<string> {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
-        .map((item: TextItem | TextMarkedContent) => {
+        .map((item: any) => {
           // Check if item is TextItem (has str property)
           return 'str' in item ? item.str : '';
         })
