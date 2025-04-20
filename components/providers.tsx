@@ -7,8 +7,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { SidebarProvider, SidebarInset, Sidebar } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/AppSidebar";
 import MobileTopBar from "@/components/layout/MobileTopBar";
-import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { NextAuthProvider } from "@/hooks/use-auth-next";
+import { AuthProvider } from "@/providers/AuthProvider";
+import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 // Create a client
@@ -17,24 +17,22 @@ const queryClient = new QueryClient();
 // This component wraps the application with all the necessary providers
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <NextAuthProvider>
+    <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <AuthProvider>
-            <AuthenticatedLayout>
-              {children}
-            </AuthenticatedLayout>
-          </AuthProvider>
+          <AppLayout>
+            {children}
+          </AppLayout>
         </TooltipProvider>
       </QueryClientProvider>
-    </NextAuthProvider>
+    </AuthProvider>
   );
 }
 
-// AuthenticatedLayout conditionally renders the sidebar based on authentication status
-function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+// AppLayout conditionally renders the sidebar based on authentication status
+function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, userRole } = useAuth();
   const isMobile = useIsMobile();
 

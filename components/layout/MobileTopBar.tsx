@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useAuth } from '@/hooks/use-auth';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +21,7 @@ interface MobileTopBarProps {
 
 const MobileTopBar = ({ userRole: propUserRole }: MobileTopBarProps) => {
   const { toggleSidebar, openMobile } = useSidebar();
-  const { userRole: authUserRole, logout } = useAuth();
+  const { userRole: authUserRole, logout, user } = useAuth();
   
   // Use the provided role from props, or fall back to the authenticated user role
   const userRole = propUserRole || authUserRole || 'student';
@@ -51,19 +52,25 @@ const MobileTopBar = ({ userRole: propUserRole }: MobileTopBarProps) => {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full">
-              <div className="rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold w-full h-full">
-                {userRole === 'student' ? 'S' : 'T'}
-              </div>
+              <Avatar className="w-full h-full">
+                <AvatarImage src={user?.image || ''} alt={user?.name || 'Profile'} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {user?.name?.charAt(0) || (userRole === 'student' ? 'S' : 'T')}
+                </AvatarFallback>
+              </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <div className="flex items-center gap-2 p-2">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                {userRole === 'student' ? 'S' : 'T'}
-              </div>
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={user?.image || ''} alt={user?.name || 'Profile'} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {user?.name?.charAt(0) || (userRole === 'student' ? 'S' : 'T')}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex flex-col">
                 <span className="text-sm font-medium">
-                  {userRole === 'student' ? 'Student User' : 'Teacher User'}
+                  {user?.name || (userRole === 'student' ? 'Student User' : 'Teacher User')}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {userRole === 'student' ? 'Student Account' : 'Teacher Account'}

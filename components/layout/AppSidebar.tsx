@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useAuth } from '@/hooks/use-auth';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   BookOpenText,
   GraduationCap,
@@ -35,7 +36,7 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
   const pathname = usePathname();
-  const { userRole: authUserRole, logout } = useAuth();
+  const { userRole: authUserRole, logout, user } = useAuth();
   const isMobile = useIsMobile();
   
   // Use the provided role from props, or fall back to the authenticated user role
@@ -139,9 +140,12 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
           <div className="flex flex-col gap-3 items-center">
             <Button variant="outline" size="icon" asChild className="rounded-full w-9 h-9 p-0">
               <Link href="/profile">
-                <div className="rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold w-full h-full">
-                  {userRole === 'student' ? 'S' : 'T'}
-                </div>
+                <Avatar className="w-full h-full">
+                  <AvatarImage src={user?.image || ''} alt={user?.name || 'Profile'} />
+                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                    {user?.name?.charAt(0) || (userRole === 'student' ? 'S' : 'T')}
+                  </AvatarFallback>
+                </Avatar>
               </Link>
             </Button>
             <Button 
@@ -156,12 +160,15 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
         ) : (
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                {userRole === 'student' ? 'S' : 'T'}
-              </div>
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={user?.image || ''} alt={user?.name || 'Profile'} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                  {user?.name?.charAt(0) || (userRole === 'student' ? 'S' : 'T')}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex flex-col">
                 <span className="text-sm font-medium">
-                  {userRole === 'student' ? 'Student User' : 'Teacher User'}
+                  {user?.name || (userRole === 'student' ? 'Student User' : 'Teacher User')}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {userRole === 'student' ? 'Student Account' : 'Teacher Account'}
