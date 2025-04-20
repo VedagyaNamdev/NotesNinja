@@ -13,6 +13,22 @@ export default function ApplyRolePage() {
   const [hasTriedApplying, setHasTriedApplying] = useState(false);
   const [redirectAttempts, setRedirectAttempts] = useState(0);
   const [selectedRoleForRedirect, setSelectedRoleForRedirect] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
+  // Force direct navigation to dashboard based on role
+  const forceRedirectToDashboard = (role: string) => {
+    if (isRedirecting) return; // Prevent multiple redirects
+    
+    setIsRedirecting(true);
+    setMessage(`Redirecting to ${role} dashboard...`);
+    
+    // Using plain URL navigation - bypass Next.js router completely
+    const dashboardUrl = `${window.location.origin}/${role}/dashboard?newRole=true&ts=${Date.now()}`;
+    console.log(`FORCE REDIRECTING TO: ${dashboardUrl}`);
+    
+    // Force a hard navigation
+    window.location.href = dashboardUrl;
+  };
 
   useEffect(() => {
     // Track when we've tried to apply the role to avoid infinite loops
@@ -53,24 +69,8 @@ export default function ApplyRolePage() {
           sessionStorage.setItem('redirectRole', selectedRole);
           localStorage.setItem('lastSelectedRole', selectedRole);
           
-          // Generate the dashboard URL based on the selected role
-          const dashboardPath = `/${selectedRole}/dashboard?newRole=true`;
-          console.log(`Redirecting to dashboard: ${dashboardPath}`);
-          
-          // Try multiple redirection methods to handle various deployment environments
-          // Method 1: Use Next.js router with a small delay to ensure session update
-          setTimeout(() => {
-            console.log(`Router push to: ${dashboardPath}`);
-            router.push(dashboardPath);
-          }, 500);
-          
-          // Method 2: After a slightly longer delay, try direct navigation if router didn't work
-          setTimeout(() => {
-            if (window.location.pathname === '/auth/apply-role') {
-              console.log(`Router redirect didn't complete, trying window.location for: ${dashboardPath}`);
-              window.location.href = dashboardPath;
-            }
-          }, 1500);
+          // Force direct navigation - no Next.js router
+          forceRedirectToDashboard(selectedRole);
         } else {
           console.error('Failed to update role');
           setError('Failed to update your role. Please try again.');
@@ -91,7 +91,7 @@ export default function ApplyRolePage() {
   // Add an additional effect to handle redirection failures
   useEffect(() => {
     // Don't run this effect if we haven't tried applying the role yet
-    if (!hasTriedApplying) return;
+    if (!hasTriedApplying || isRedirecting) return;
     
     // Don't try more than 3 times to avoid redirect loops
     if (redirectAttempts >= 3) return;
@@ -106,10 +106,8 @@ export default function ApplyRolePage() {
         
         if (roleToUse) {
           console.log(`Still on apply-role page, attempting redirect again (attempt ${redirectAttempts + 1}) to role: ${roleToUse}`);
-          // Force a hard redirect to the selected role's dashboard
-          const url = `/${roleToUse}/dashboard?newRole=true&retry=${redirectAttempts + 1}`;
-          console.log(`Redirecting to: ${url}`);
-          window.location.href = url;
+          // Force a direct navigation
+          forceRedirectToDashboard(roleToUse);
         } else {
           console.error("No role found for redirection");
           setError("Could not determine your role. Please try again.");
@@ -118,8 +116,18 @@ export default function ApplyRolePage() {
     }, 5000);
     
     return () => clearTimeout(redirectTimer);
-  }, [hasTriedApplying, redirectAttempts, selectedRoleForRedirect]);
+  }, [hasTriedApplying, redirectAttempts, selectedRoleForRedirect, isRedirecting]);
 
+  // Allow manual redirect
+  const handleManualRedirect = () => {
+    const role = selectedRoleForRedirect || localStorage.getItem('lastSelectedRole');
+    if (role) {
+      forceRedirectToDashboard(role);
+    } else {
+      setError("No role found. Please go back and select a role.");
+    }
+  };
+ 
   // Add debug component
   const DebugInfo = () => {
     const [localStorageRole, setLocalStorageRole] = useState<string | null>(null);
@@ -175,6 +183,15 @@ export default function ApplyRolePage() {
               <div className="mt-2 text-sm text-amber-600">
                 Redirect attempt {redirectAttempts} of 3...
               </div>
+            )}
+            
+            {hasTriedApplying && !isRedirecting && (
+              <button 
+                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md"
+                onClick={handleManualRedirect}
+              >
+                Click here to go to dashboard
+              </button>
             )}
           </div>
         )}

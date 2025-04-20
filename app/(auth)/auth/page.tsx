@@ -60,9 +60,16 @@ export default function AuthPage() {
       console.log('Re-storing selectedRole before OAuth:', selectedRole);
     }
     
+    // Store the selected role in sessionStorage as well for redundancy
+    sessionStorage.setItem('redirectRole', selectedRole!);
+    
+    // Set a specific callbackUrl that bypasses the apply-role page for deployment
+    const callbackUrl = `${window.location.origin}/dashboard-redirect`;
+    console.log(`Setting callbackUrl to: ${callbackUrl}`);
+    
     // Redirect to OAuth
     signIn(provider, { 
-      callbackUrl: '/auth/apply-role',
+      callbackUrl,
       redirect: true
     });
   };

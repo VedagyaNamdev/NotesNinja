@@ -97,11 +97,13 @@ const handler = NextAuth({
     async session({ session, token }) {
       // Add user data from token to session
       if (token && session.user) {
+        console.log("Session callback called, token:", token);
         session.user.id = token.sub;
         
         // Add role from token
         if (token.role) {
           session.user.role = token.role;
+          console.log("Setting role from token:", token.role);
         }
         
         try {
@@ -116,6 +118,7 @@ const handler = NextAuth({
           if (userData && !error) {
             // Add Supabase user data to session
             session.user.role = userData.role;
+            console.log("Setting role from database:", userData.role);
             // Make sure to include image from database if available
             if (userData.image) {
               session.user.image = userData.image;
