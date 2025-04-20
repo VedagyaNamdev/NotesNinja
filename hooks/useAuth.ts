@@ -53,16 +53,20 @@ export function useAuth() {
   const updateRole = async (role: UserRole) => {
     if (!role) return false;
     
-    setIsUpdatingRole(true);
     console.log(`Updating role to: ${role}`);
+    setIsUpdatingRole(true);
     
+    // Immediately store the role in multiple places to ensure it's available
     try {
-      // First, store the role securely to ensure redirects work even if API calls fail
-      // This ensures our apply-role page can still redirect correctly
       localStorage.setItem('selectedRole', role);
       localStorage.setItem('lastSelectedRole', role);
       sessionStorage.setItem('redirectRole', role);
-      
+      console.log(`Role stored in localStorage and sessionStorage: ${role}`);
+    } catch (e) {
+      console.error('Error storing role in localStorage:', e);
+    }
+    
+    try {
       // Call the API to update the role in the database
       const response = await fetch('/api/auth/update-role', {
         method: 'POST',
@@ -97,7 +101,6 @@ export function useAuth() {
         // Continue even if session update failed, the middleware will handle this
       }
       
-      // The redirection will be handled in the apply-role page
       return true;
     } catch (error) {
       console.error('Failed to update role:', error);

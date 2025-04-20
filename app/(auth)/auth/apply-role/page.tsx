@@ -11,9 +11,9 @@ export default function ApplyRolePage() {
   const [message, setMessage] = useState('Preparing your account...');
   const [error, setError] = useState<string | null>(null);
   const [hasTriedApplying, setHasTriedApplying] = useState(false);
-  const [redirectAttempts, setRedirectAttempts] = useState(0);
   const [selectedRoleForRedirect, setSelectedRoleForRedirect] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Force direct navigation to dashboard based on role
   const forceRedirectToDashboard = (role: string) => {
@@ -22,8 +22,17 @@ export default function ApplyRolePage() {
     setIsRedirecting(true);
     setMessage(`Redirecting to ${role} dashboard...`);
     
+    // Store the role in multiple places for redundancy
+    try {
+      localStorage.setItem('selectedRole', role);
+      localStorage.setItem('lastSelectedRole', role);
+      sessionStorage.setItem('redirectRole', role);
+    } catch (e) {
+      console.error('Error storing role in storage:', e);
+    }
+    
     // Using plain URL navigation - bypass Next.js router completely
-    const dashboardUrl = `${window.location.origin}/${role}/dashboard?newRole=true&ts=${Date.now()}`;
+    const dashboardUrl = `${window.location.origin}/${role}/dashboard?force=true&ts=${Date.now()}`;
     console.log(`FORCE REDIRECTING TO: ${dashboardUrl}`);
     
     // Force a hard navigation
@@ -61,14 +70,7 @@ export default function ApplyRolePage() {
         const success = await updateRole(selectedRole);
         
         if (success) {
-          // Clear the stored role selection from the auth flow
-          localStorage.removeItem('selectedRole');
           console.log(`Successfully updated role to ${selectedRole}`);
-          
-          // Store the selected role to help with redirection
-          sessionStorage.setItem('redirectRole', selectedRole);
-          localStorage.setItem('lastSelectedRole', selectedRole);
-          
           // Force direct navigation - no Next.js router
           forceRedirectToDashboard(selectedRole);
         } else {
@@ -87,73 +89,6 @@ export default function ApplyRolePage() {
 
     return () => clearTimeout(timer);
   }, [isAuthenticated, user, router, updateRole, hasTriedApplying]);
-
-  // Add an additional effect to handle redirection failures
-  useEffect(() => {
-    // Don't run this effect if we haven't tried applying the role yet
-    if (!hasTriedApplying || isRedirecting) return;
-    
-    // Don't try more than 3 times to avoid redirect loops
-    if (redirectAttempts >= 3) return;
-    
-    const redirectTimer = setTimeout(() => {
-      const currentPath = window.location.pathname;
-      // If we're still on the apply-role page after 5 seconds, try redirecting again
-      if (currentPath === '/auth/apply-role') {
-        setRedirectAttempts(prev => prev + 1);
-        // Use the stored role from state first, then try localStorage backup
-        const roleToUse = selectedRoleForRedirect || localStorage.getItem('lastSelectedRole') as 'student' | 'teacher';
-        
-        if (roleToUse) {
-          console.log(`Still on apply-role page, attempting redirect again (attempt ${redirectAttempts + 1}) to role: ${roleToUse}`);
-          // Force a direct navigation
-          forceRedirectToDashboard(roleToUse);
-        } else {
-          console.error("No role found for redirection");
-          setError("Could not determine your role. Please try again.");
-        }
-      }
-    }, 5000);
-    
-    return () => clearTimeout(redirectTimer);
-  }, [hasTriedApplying, redirectAttempts, selectedRoleForRedirect, isRedirecting]);
-
-  // Allow manual redirect
-  const handleManualRedirect = () => {
-    const role = selectedRoleForRedirect || localStorage.getItem('lastSelectedRole');
-    if (role) {
-      forceRedirectToDashboard(role);
-    } else {
-      setError("No role found. Please go back and select a role.");
-    }
-  };
- 
-  // Add debug component
-  const DebugInfo = () => {
-    const [localStorageRole, setLocalStorageRole] = useState<string | null>(null);
-    const [sessionStorageRole, setSessionStorageRole] = useState<string | null>(null);
-    
-    useEffect(() => {
-      setLocalStorageRole(localStorage.getItem('selectedRole') || localStorage.getItem('lastSelectedRole'));
-      setSessionStorageRole(sessionStorage.getItem('redirectRole'));
-    }, []);
-    
-    return (
-      <div className="mt-4 text-xs text-gray-500 text-left">
-        <details>
-          <summary>Debug Info</summary>
-          <div className="mt-2 space-y-1 pl-2">
-            <p>Selected role state: {selectedRoleForRedirect}</p>
-            <p>Local storage role: {localStorageRole}</p>
-            <p>Session storage role: {sessionStorageRole}</p>
-            <p>Current auth state: {isAuthenticated ? 'Authenticated' : 'Not authenticated'}</p>
-            <p>User role from session: {user?.role || 'None'}</p>
-            <p>Redirect attempts: {redirectAttempts}</p>
-          </div>
-        </details>
-      </div>
-    );
-  };
 
   // If there's an error or we're still waiting, show loading UI
   return (
@@ -175,27 +110,28 @@ export default function ApplyRolePage() {
           <div className="flex flex-col items-center justify-center gap-4">
             <Spinner size="lg" />
             <p>{message}</p>
-            {selectedRoleForRedirect && (
-              <div className="text-sm text-blue-600">Selected role: {selectedRoleForRedirect}</div>
-            )}
             {isUpdatingRole && <p className="text-sm text-muted-foreground">This may take a few seconds...</p>}
-            {redirectAttempts > 0 && (
-              <div className="mt-2 text-sm text-amber-600">
-                Redirect attempt {redirectAttempts} of 3...
-              </div>
-            )}
-            
-            {hasTriedApplying && !isRedirecting && (
-              <button 
-                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md"
-                onClick={handleManualRedirect}
-              >
-                Click here to go to dashboard
-              </button>
-            )}
           </div>
         )}
-        <DebugInfo />
+        
+        {/* Optional debug info toggle at the bottom */}
+        <div className="mt-6 text-xs text-center">
+          <button 
+            onClick={() => setShowDebug(!showDebug)} 
+            className="text-gray-400 hover:text-gray-600"
+          >
+            {showDebug ? 'Hide Debug Info' : 'Show Debug Info'}
+          </button>
+          
+          {showDebug && (
+            <div className="mt-2 text-left bg-gray-50 p-2 rounded">
+              <p>Selected role: {selectedRoleForRedirect}</p>
+              <p>Local storage role: {typeof window !== 'undefined' ? localStorage.getItem('lastSelectedRole') : 'N/A'}</p>
+              <p>Session storage role: {typeof window !== 'undefined' ? sessionStorage.getItem('redirectRole') : 'N/A'}</p>
+              <p>Current auth state: {isAuthenticated ? 'Authenticated' : 'Not authenticated'}</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -64,7 +64,8 @@ export default function AuthPage() {
     sessionStorage.setItem('redirectRole', selectedRole!);
     
     // Set a specific callbackUrl that bypasses the apply-role page for deployment
-    const callbackUrl = `${window.location.origin}/dashboard-redirect`;
+    // Include the role directly in the URL to ensure it's passed through the OAuth flow
+    const callbackUrl = `${window.location.origin}/dashboard-redirect?role=${selectedRole}`;
     console.log(`Setting callbackUrl to: ${callbackUrl}`);
     
     // Redirect to OAuth

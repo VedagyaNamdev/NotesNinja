@@ -9,6 +9,7 @@ export async function middleware(request: NextRequest) {
   // Check if the path is public, auth-related, or API
   const isAuthPath = path === '/auth';
   const isApplyRolePath = path === '/auth/apply-role';
+  const isDashboardRedirectPath = path === '/dashboard-redirect';
   const isApiPath = path.startsWith('/api/');
   const isRootPath = path === '/';
   
@@ -23,17 +24,24 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Check URL params for newRole which indicates a custom redirect
+  // Check URL params that would bypass middleware
   const hasNewRole = request.nextUrl.searchParams.has('newRole');
-  const retry = request.nextUrl.searchParams.get('retry');
+  const hasForce = request.nextUrl.searchParams.has('force');
+  const hasFromRedirect = request.nextUrl.searchParams.has('fromRedirect');
+  const urlRole = request.nextUrl.searchParams.get('role');
   
   console.log('Path:', path, 'Token:', token ? 'exists' : 'none', 'Role:', token?.role, 
-    'NewRole:', hasNewRole, 'Retry:', retry);
+    'URL Role:', urlRole, 'HasForce:', hasForce, 'FromRedirect:', hasFromRedirect);
 
-  // This is a special case for redirects after role selection
-  // Completely bypass any role checking during the role selection flow
-  if (hasNewRole) {
-    console.log('Bypassing middleware redirects due to newRole parameter');
+  // Special cases for bypassing middleware redirects
+  if (hasNewRole || hasForce || hasFromRedirect) {
+    console.log('Bypassing middleware redirects due to special URL parameters');
+    return NextResponse.next();
+  }
+
+  // Dashboard redirect page should not be redirected
+  if (isDashboardRedirectPath) {
+    console.log('Allowing access to dashboard redirect page');
     return NextResponse.next();
   }
 
@@ -75,26 +83,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
   
-  // If user is authenticated but has no role and is accessing a protected route
-  // that requires a role (student/teacher dashboards), redirect to apply-role
+  // If user is authenticated but has no role, redirect to apply-role
   if (token && !token.role && (path.startsWith('/student/') || path.startsWith('/teacher/'))) {
     return NextResponse.redirect(new URL('/auth/apply-role', request.url));
   }
   
-  // Role-specific route redirections - BUT ONLY IF THE USER IS TRYING TO ACCESS THE WRONG ROLE
-  if (token && token.role) {
-    // Check for explicit cross-role access only - don't redirect if they're already in their role
-    if (token.role === 'student' && path.startsWith('/teacher/')) {
-      console.log('Student trying to access teacher routes, redirecting to student dashboard');
-      return NextResponse.redirect(new URL('/student/dashboard', request.url));
-    }
-    if (token.role === 'teacher' && path.startsWith('/student/')) {
-      console.log('Teacher trying to access student routes, redirecting to teacher dashboard');
-      return NextResponse.redirect(new URL('/teacher/dashboard', request.url));
-    }
-  }
-  
-  // For all other cases, allow access
+  // For all other cases, allow access - remove cross-role restrictions
+  // This is important to fix the issue where users were being forced to student role
   console.log('Allowing access to', path);
   return NextResponse.next();
 }
