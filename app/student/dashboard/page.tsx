@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useRouter } from 'next/navigation';
 import PageHeader from '@/components/shared/PageHeader';
@@ -8,13 +8,170 @@ import MetricCard from '@/components/ui/card-metrics';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { FileText, Calendar, Brain, ListChecks } from 'lucide-react';
+import { FileText, Calendar, Brain, ListChecks, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
 
 export default function StudentDashboard() {
   // Authentication check
   const { isAuthenticated, userRole } = useAuth();
   const router = useRouter();
+  
+  // State for flashcard data
+  const [flashcardStats, setFlashcardStats] = useState({
+    totalDecks: 0,
+    totalCards: 0,
+    reviewedToday: 0,
+    progress: {} as Record<string, number>,
+    decks: [] as any[]
+  });
+  
+  // State for quiz/test stats
+  const [quizStats, setQuizStats] = useState({
+    total: 0,
+    completedThisWeek: 0,
+    latestScore: 0
+  });
+  
+  // State for notes statistics
+  const [notesStats, setNotesStats] = useState({
+    total: 0,
+    newThisWeek: 0
+  });
+  
+  // State for upcoming reviews
+  const [upcomingReviews, setUpcomingReviews] = useState<any[]>([]);
+  
+  // Load all data on component mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        // Load flashcard decks
+        const decks = JSON.parse(localStorage.getItem('flashcardDecks') || '[]');
+        
+        // Count today's and recent studied decks
+        const today = new Date().toDateString();
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        
+        let reviewedToday = 0;
+        let totalCards = 0;
+        let newThisWeek = 0;
+        const progress: Record<string, number> = {};
+        
+        // Parse decks for stats
+        decks.forEach((deck: any) => {
+          // Add to total cards
+          totalCards += deck.cards?.length || 0;
+          
+          // Check if studied today
+          if (deck.lastStudied && new Date(deck.lastStudied).toDateString() === today) {
+            reviewedToday += 1;
+          }
+          
+          // Check if created this week
+          if (deck.createdAt && new Date(deck.createdAt) > oneWeekAgo) {
+            newThisWeek += 1;
+          }
+          
+          // Store progress
+          if (deck.name && deck.progress !== undefined) {
+            progress[deck.name] = deck.progress;
+          }
+        });
+        
+        // Set flashcard stats
+        setFlashcardStats({
+          totalDecks: decks.length,
+          totalCards,
+          reviewedToday,
+          progress,
+          decks
+        });
+        
+        // Set notes stats based on decks (as a proxy for notes)
+        setNotesStats({
+          total: decks.length,
+          newThisWeek
+        });
+        
+        // Get quiz stats from localStorage
+        const quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]');
+        
+        let completedThisWeek = 0;
+        let latestScore = 0;
+        
+        if (quizResults.length > 0) {
+          // Find the latest score
+          const latestQuiz = quizResults[quizResults.length - 1];
+          latestScore = latestQuiz.score || 0;
+          
+          // Count quizzes from past week
+          completedThisWeek = quizResults.filter((quiz: any) => 
+            quiz.date && new Date(quiz.date) > oneWeekAgo
+          ).length;
+        }
+        
+        setQuizStats({
+          total: quizResults.length,
+          completedThisWeek,
+          latestScore
+        });
+        
+        // Generate upcoming reviews based on least-reviewed decks
+        const upcoming = [...decks]
+          .sort((a, b) => {
+            // Sort by: never studied first, then by oldest study date
+            if (!a.lastStudied && !b.lastStudied) return 0;
+            if (!a.lastStudied) return -1;
+            if (!b.lastStudied) return 1;
+            return new Date(a.lastStudied).getTime() - new Date(b.lastStudied).getTime();
+          })
+          .slice(0, 3) // Take top 3
+          .map(deck => {
+            // Generate a recommended date based on current progress
+            const progress = deck.progress || 0;
+            let reviewDate = 'Today';
+            let reviewTime = '';
+            
+            if (!deck.lastStudied) {
+              reviewTime = 'Not studied yet';
+            } else {
+              const now = new Date();
+              const hours = now.getHours();
+              reviewTime = `${hours > 12 ? (hours - 12) : hours}:00 ${hours >= 12 ? 'PM' : 'AM'}`;
+              
+              if (progress > 80) {
+                // Well known - recommend in a week
+                const nextWeek = new Date();
+                nextWeek.setDate(nextWeek.getDate() + 7);
+                reviewDate = nextWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+              } else if (progress > 50) {
+                // Medium known - recommend in 3 days
+                const nextDays = new Date();
+                nextDays.setDate(nextDays.getDate() + 3);
+                reviewDate = nextDays.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+              } else if (progress > 20) {
+                // Just started - recommend tomorrow
+                reviewDate = 'Tomorrow';
+              }
+            }
+            
+            return {
+              title: deck.name,
+              date: reviewDate,
+              time: reviewTime,
+              id: deck.id
+            };
+          });
+        
+        setUpcomingReviews(upcoming);
+        
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      }
+    }
+  }, []);
   
   React.useEffect(() => {
     if (!isAuthenticated) {
@@ -44,6 +201,17 @@ export default function StudentDashboard() {
   if (!isAuthenticated || userRole !== 'student') {
     return null;
   }
+  
+  // Function to handle starting a review session
+  const startReview = (deckId: string) => {
+    // Find the deck index
+    const deckIndex = flashcardStats.decks.findIndex(deck => deck.id === deckId);
+    if (deckIndex >= 0) {
+      // Store the selected deck index in localStorage for the flashcards page to use
+      localStorage.setItem('selectedDeckIndex', deckIndex.toString());
+      router.push('/student/flashcards');
+    }
+  };
 
   return (
     <>
@@ -61,131 +229,90 @@ export default function StudentDashboard() {
         <motion.div variants={item}>
           <MetricCard
             title="Total Notes"
-            value="24"
+            value={notesStats.total.toString()}
             icon={<FileText className="h-4 w-4" />}
-            description="4 new this week"
+            description={`${notesStats.newThisWeek} new this week`}
           />
         </motion.div>
         
         <motion.div variants={item}>
           <MetricCard
             title="Tests Completed"
-            value="12"
+            value={quizStats.total.toString()}
             icon={<ListChecks className="h-4 w-4" />}
-            trend={{ value: 15, isPositive: true }}
+            description={`${quizStats.completedThisWeek} this week`}
+            trend={quizStats.latestScore > 0 ? { value: quizStats.latestScore, isPositive: quizStats.latestScore >= 70 } : undefined}
           />
         </motion.div>
         
         <motion.div variants={item}>
           <MetricCard
             title="Flashcards Created"
-            value="156"
+            value={flashcardStats.totalCards.toString()}
             icon={<Brain className="h-4 w-4" />}
-            description="32 reviewed today"
+            description={`${flashcardStats.reviewedToday} deck${flashcardStats.reviewedToday !== 1 ? 's' : ''} reviewed today`}
           />
         </motion.div>
         
         <motion.div variants={item}>
           <MetricCard
-            title="Next Review Due"
-            value="Today"
-            icon={<Calendar className="h-4 w-4" />}
-            description="5 topics to review"
+            title="Flashcard Decks"
+            value={flashcardStats.totalDecks.toString()}
+            icon={<BookOpen className="h-4 w-4" />}
+            description={upcomingReviews.length > 0 ? `${upcomingReviews.length} due for review` : "No decks to review"}
           />
         </motion.div>
       </motion.div>
       
-      <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Tabs defaultValue="recent" className="col-span-2">
+      <div className="mt-8 grid gap-4 md:grid-cols-1">
+        <Tabs defaultValue="recent">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold mb-2">Your Materials</h2>
             <TabsList>
               <TabsTrigger value="recent">Recent</TabsTrigger>
-              <TabsTrigger value="favorites">Favorites</TabsTrigger>
             </TabsList>
           </div>
           
           <TabsContent value="recent" className="space-y-4">
-            {[
-              { title: "Physics Lecture Notes", date: "Added 2 days ago", progress: 75 },
-              { title: "Biology Cell Structure", date: "Added 5 days ago", progress: 90 },
-              { title: "History: World War II", date: "Added 1 week ago", progress: 60 },
-              { title: "Chemistry: Organic Compounds", date: "Added 2 weeks ago", progress: 45 },
-            ].map((item, i) => (
-              <motion.div 
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-              >
-                <Card className="hover-scale">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-medium">{item.title}</h3>
-                        <p className="text-sm text-muted-foreground">{item.date}</p>
-                      </div>
-                      <span className="text-sm font-medium">{item.progress}%</span>
-                    </div>
-                    <Progress value={item.progress} className="h-2" />
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </TabsContent>
-          
-          <TabsContent value="favorites" className="space-y-4">
-            {[
-              { title: "Math Formulas", date: "Added 1 month ago", progress: 95 },
-              { title: "Programming Concepts", date: "Added 3 weeks ago", progress: 80 },
-            ].map((item, i) => (
-              <motion.div 
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-              >
-                <Card className="hover-scale">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-medium">{item.title}</h3>
-                        <p className="text-sm text-muted-foreground">{item.date}</p>
-                      </div>
-                      <span className="text-sm font-medium">{item.progress}%</span>
-                    </div>
-                    <Progress value={item.progress} className="h-2" />
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
+            {flashcardStats.decks.length > 0 ? (
+              flashcardStats.decks
+                .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+                .slice(0, 4)
+                .map((deck, i) => (
+                  <motion.div 
+                    key={deck.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                  >
+                    <Card className="hover-scale cursor-pointer" onClick={() => router.push('/student/flashcards')}>
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h3 className="font-medium">{deck.name}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {deck.createdAt 
+                                ? `Added ${new Date(deck.createdAt).toLocaleDateString()}`
+                                : 'Recently added'}
+                            </p>
+                          </div>
+                          <span className="text-sm font-medium">{deck.progress || 0}%</span>
+                        </div>
+                        <Progress value={deck.progress || 0} className="h-2" />
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))
+            ) : (
+              <div className="min-h-[200px] flex items-center justify-center flex-col gap-4">
+                <p className="text-muted-foreground">No flashcard decks yet</p>
+                <Button onClick={() => router.push('/student/upload')}>
+                  Create Your First Deck
+                </Button>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Reviews</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[
-                { title: "Physics Formulas", date: "Today", time: "4:00 PM" },
-                { title: "Biology Terms", date: "Tomorrow", time: "9:00 AM" },
-                { title: "Chemistry Elements", date: "May 20", time: "11:00 AM" },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="bg-primary/10 h-10 w-10 rounded-full flex items-center justify-center text-primary">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-medium text-sm">{item.title}</h4>
-                    <p className="text-xs text-muted-foreground">{item.date} at {item.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </>
   );

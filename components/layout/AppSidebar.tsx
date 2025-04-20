@@ -159,7 +159,7 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
           </div>
         ) : (
           <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
+            <Link href="/profile" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <Avatar className="h-9 w-9">
                 <AvatarImage src={user?.image || ''} alt={user?.name || 'Profile'} />
                 <AvatarFallback className="bg-primary/10 text-primary font-semibold">
@@ -174,7 +174,7 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
                   {userRole === 'student' ? 'Student Account' : 'Teacher Account'}
                 </span>
               </div>
-            </div>
+            </Link>
             <Button 
               variant="ghost" 
               size="icon" 
