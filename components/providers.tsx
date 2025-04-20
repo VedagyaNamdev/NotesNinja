@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarInset, Sidebar } from "@/components/ui/sidebar"
 import AppSidebar from "@/components/layout/AppSidebar";
 import MobileTopBar from "@/components/layout/MobileTopBar";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { NextAuthProvider } from "@/hooks/use-auth-next";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 // Create a client
@@ -16,17 +17,19 @@ const queryClient = new QueryClient();
 // This component wraps the application with all the necessary providers
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <AuthProvider>
-          <AuthenticatedLayout>
-            {children}
-          </AuthenticatedLayout>
-        </AuthProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <NextAuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <AuthProvider>
+            <AuthenticatedLayout>
+              {children}
+            </AuthenticatedLayout>
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </NextAuthProvider>
   );
 }
 
