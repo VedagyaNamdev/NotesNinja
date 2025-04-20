@@ -39,6 +39,10 @@ export default function AuthPage() {
   const handleRoleContinue = () => {
     if (!selectedRole) return;
     
+    // Store the selected role in localStorage immediately to ensure it's available
+    localStorage.setItem('selectedRole', selectedRole);
+    console.log('Stored role in localStorage:', selectedRole);
+    
     if (user) {
       // User is already authenticated, just update role
       updateRole(selectedRole);
@@ -50,8 +54,11 @@ export default function AuthPage() {
 
   // Handle provider selection
   const handleProviderSelect = (provider: 'google' | 'github') => {
-    // Store the selected role in localStorage
-    localStorage.setItem('selectedRole', selectedRole!);
+    // Verify the selected role is in localStorage
+    if (!selectedRole || localStorage.getItem('selectedRole') !== selectedRole) {
+      localStorage.setItem('selectedRole', selectedRole!);
+      console.log('Re-storing selectedRole before OAuth:', selectedRole);
+    }
     
     // Redirect to OAuth
     signIn(provider, { 

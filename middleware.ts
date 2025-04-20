@@ -10,6 +10,7 @@ export async function middleware(request: NextRequest) {
   const isAuthPath = path === '/auth';
   const isApplyRolePath = path === '/auth/apply-role';
   const isApiPath = path.startsWith('/api/');
+  const isRootPath = path === '/';
   
   // Don't run middleware for API routes
   if (isApiPath) {
@@ -22,18 +23,28 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  console.log('Path:', path, 'Token:', token ? 'exists' : 'none', 'Role:', token?.role);
+  // Check URL params for newRole which indicates a custom redirect
+  const hasNewRole = request.nextUrl.searchParams.has('newRole');
+  const retry = request.nextUrl.searchParams.get('retry');
+  
+  console.log('Path:', path, 'Token:', token ? 'exists' : 'none', 'Role:', token?.role, 
+    'NewRole:', hasNewRole, 'Retry:', retry);
 
   // This is a special case for redirects after role selection
   // Completely bypass any role checking during the role selection flow
-  if (request.nextUrl.searchParams.has('newRole')) {
+  if (hasNewRole) {
     console.log('Bypassing middleware redirects due to newRole parameter');
     return NextResponse.next();
   }
 
   // Role selection flow logic
   if (isAuthPath) {
-    // Let users access auth page even if authenticated
+    // If authenticated with role, redirect to appropriate dashboard
+    if (token && token.role) {
+      console.log(`User is authenticated with role ${token.role}, redirecting to dashboard`);
+      return NextResponse.redirect(new URL(`/${token.role}/dashboard`, request.url));
+    }
+    // Let users access auth page even if authenticated without role
     return NextResponse.next();
   }
   
@@ -44,6 +55,17 @@ export async function middleware(request: NextRequest) {
     }
     // Let authenticated users apply role
     return NextResponse.next();
+  }
+  
+  // Handle root path redirection
+  if (isRootPath) {
+    if (token && token.role) {
+      // Redirect to role-specific dashboard
+      console.log(`Root path, redirecting to ${token.role} dashboard`);
+      return NextResponse.redirect(new URL(`/${token.role}/dashboard`, request.url));
+    }
+    // Redirect to auth page if not authenticated or no role
+    return NextResponse.redirect(new URL('/auth', request.url));
   }
   
   // Protected routes logic
@@ -59,9 +81,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/apply-role', request.url));
   }
   
-  // REMOVING THE ROLE-SPECIFIC ROUTE REDIRECTIONS TO FIX THE ISSUE
-  // Let the users access the route they requested without redirecting based on role
+  // Role-specific route redirections - BUT ONLY IF THE USER IS TRYING TO ACCESS THE WRONG ROLE
+  if (token && token.role) {
+    // Check for explicit cross-role access only - don't redirect if they're already in their role
+    if (token.role === 'student' && path.startsWith('/teacher/')) {
+      console.log('Student trying to access teacher routes, redirecting to student dashboard');
+      return NextResponse.redirect(new URL('/student/dashboard', request.url));
+    }
+    if (token.role === 'teacher' && path.startsWith('/student/')) {
+      console.log('Teacher trying to access student routes, redirecting to teacher dashboard');
+      return NextResponse.redirect(new URL('/teacher/dashboard', request.url));
+    }
+  }
   
+  // For all other cases, allow access
+  console.log('Allowing access to', path);
   return NextResponse.next();
 }
 

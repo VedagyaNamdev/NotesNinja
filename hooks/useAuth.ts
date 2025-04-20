@@ -54,8 +54,14 @@ export function useAuth() {
     if (!role) return false;
     
     setIsUpdatingRole(true);
+    console.log(`Updating role to: ${role}`);
+    
     try {
-      console.log(`Updating role to: ${role}`);
+      // First, store the role securely to ensure redirects work even if API calls fail
+      // This ensures our apply-role page can still redirect correctly
+      localStorage.setItem('selectedRole', role);
+      localStorage.setItem('lastSelectedRole', role);
+      sessionStorage.setItem('redirectRole', role);
       
       // Call the API to update the role in the database
       const response = await fetch('/api/auth/update-role', {
@@ -73,25 +79,25 @@ export function useAuth() {
         throw new Error(data.error || 'Failed to update role');
       }
       
+      console.log('API role update successful:', data);
+      
       // Update the session with the new role
-      await update({
-        ...session,
-        user: {
-          ...session?.user,
-          role,
-        },
-      });
+      try {
+        console.log('Updating session with new role:', role);
+        await update({
+          ...session,
+          user: {
+            ...session?.user,
+            role,
+          },
+        });
+        console.log('Session updated successfully with role:', role);
+      } catch (sessionError) {
+        console.error('Error updating session:', sessionError);
+        // Continue even if session update failed, the middleware will handle this
+      }
       
-      // Store the selected role temporarily to help with redirection
-      sessionStorage.setItem('redirectRole', role);
-      localStorage.setItem('lastSelectedRole', role);
-      
-      // Generate the dashboard URL based on the selected role (not the session role)
-      const dashboardUrl = `/${role}/dashboard?newRole=true`;
-      console.log(`Redirecting user to dashboard: ${dashboardUrl}`);
-      
-      // Use window.location.href for a full page navigation that bypasses Next.js router
-      window.location.href = dashboardUrl;
+      // The redirection will be handled in the apply-role page
       return true;
     } catch (error) {
       console.error('Failed to update role:', error);

@@ -11,6 +11,8 @@ export default function ApplyRolePage() {
   const [message, setMessage] = useState('Preparing your account...');
   const [error, setError] = useState<string | null>(null);
   const [hasTriedApplying, setHasTriedApplying] = useState(false);
+  const [redirectAttempts, setRedirectAttempts] = useState(0);
+  const [selectedRoleForRedirect, setSelectedRoleForRedirect] = useState<string | null>(null);
 
   useEffect(() => {
     // Track when we've tried to apply the role to avoid infinite loops
@@ -36,6 +38,8 @@ export default function ApplyRolePage() {
 
         console.log(`Found role in localStorage: ${selectedRole}`);
         setMessage(`Setting up your ${selectedRole} account...`);
+        // Save the role for redirection
+        setSelectedRoleForRedirect(selectedRole);
         
         // Apply the role
         const success = await updateRole(selectedRole);
@@ -49,16 +53,24 @@ export default function ApplyRolePage() {
           sessionStorage.setItem('redirectRole', selectedRole);
           localStorage.setItem('lastSelectedRole', selectedRole);
           
-          // Navigate to the appropriate dashboard with a small delay
-          // to ensure the session is updated
+          // Generate the dashboard URL based on the selected role
+          const dashboardPath = `/${selectedRole}/dashboard?newRole=true`;
+          console.log(`Redirecting to dashboard: ${dashboardPath}`);
+          
+          // Try multiple redirection methods to handle various deployment environments
+          // Method 1: Use Next.js router with a small delay to ensure session update
           setTimeout(() => {
-            // Generate the dashboard URL based on the selected role
-            const dashboardPath = `/${selectedRole}/dashboard?newRole=true`;
-            console.log(`Redirecting to dashboard: ${dashboardPath}`);
-            
-            // Use direct window.location.href for a clean navigation
-            window.location.href = dashboardPath;
-          }, 1000);
+            console.log(`Router push to: ${dashboardPath}`);
+            router.push(dashboardPath);
+          }, 500);
+          
+          // Method 2: After a slightly longer delay, try direct navigation if router didn't work
+          setTimeout(() => {
+            if (window.location.pathname === '/auth/apply-role') {
+              console.log(`Router redirect didn't complete, trying window.location for: ${dashboardPath}`);
+              window.location.href = dashboardPath;
+            }
+          }, 1500);
         } else {
           console.error('Failed to update role');
           setError('Failed to update your role. Please try again.');
@@ -75,6 +87,65 @@ export default function ApplyRolePage() {
 
     return () => clearTimeout(timer);
   }, [isAuthenticated, user, router, updateRole, hasTriedApplying]);
+
+  // Add an additional effect to handle redirection failures
+  useEffect(() => {
+    // Don't run this effect if we haven't tried applying the role yet
+    if (!hasTriedApplying) return;
+    
+    // Don't try more than 3 times to avoid redirect loops
+    if (redirectAttempts >= 3) return;
+    
+    const redirectTimer = setTimeout(() => {
+      const currentPath = window.location.pathname;
+      // If we're still on the apply-role page after 5 seconds, try redirecting again
+      if (currentPath === '/auth/apply-role') {
+        setRedirectAttempts(prev => prev + 1);
+        // Use the stored role from state first, then try localStorage backup
+        const roleToUse = selectedRoleForRedirect || localStorage.getItem('lastSelectedRole') as 'student' | 'teacher';
+        
+        if (roleToUse) {
+          console.log(`Still on apply-role page, attempting redirect again (attempt ${redirectAttempts + 1}) to role: ${roleToUse}`);
+          // Force a hard redirect to the selected role's dashboard
+          const url = `/${roleToUse}/dashboard?newRole=true&retry=${redirectAttempts + 1}`;
+          console.log(`Redirecting to: ${url}`);
+          window.location.href = url;
+        } else {
+          console.error("No role found for redirection");
+          setError("Could not determine your role. Please try again.");
+        }
+      }
+    }, 5000);
+    
+    return () => clearTimeout(redirectTimer);
+  }, [hasTriedApplying, redirectAttempts, selectedRoleForRedirect]);
+
+  // Add debug component
+  const DebugInfo = () => {
+    const [localStorageRole, setLocalStorageRole] = useState<string | null>(null);
+    const [sessionStorageRole, setSessionStorageRole] = useState<string | null>(null);
+    
+    useEffect(() => {
+      setLocalStorageRole(localStorage.getItem('selectedRole') || localStorage.getItem('lastSelectedRole'));
+      setSessionStorageRole(sessionStorage.getItem('redirectRole'));
+    }, []);
+    
+    return (
+      <div className="mt-4 text-xs text-gray-500 text-left">
+        <details>
+          <summary>Debug Info</summary>
+          <div className="mt-2 space-y-1 pl-2">
+            <p>Selected role state: {selectedRoleForRedirect}</p>
+            <p>Local storage role: {localStorageRole}</p>
+            <p>Session storage role: {sessionStorageRole}</p>
+            <p>Current auth state: {isAuthenticated ? 'Authenticated' : 'Not authenticated'}</p>
+            <p>User role from session: {user?.role || 'None'}</p>
+            <p>Redirect attempts: {redirectAttempts}</p>
+          </div>
+        </details>
+      </div>
+    );
+  };
 
   // If there's an error or we're still waiting, show loading UI
   return (
@@ -96,9 +167,18 @@ export default function ApplyRolePage() {
           <div className="flex flex-col items-center justify-center gap-4">
             <Spinner size="lg" />
             <p>{message}</p>
+            {selectedRoleForRedirect && (
+              <div className="text-sm text-blue-600">Selected role: {selectedRoleForRedirect}</div>
+            )}
             {isUpdatingRole && <p className="text-sm text-muted-foreground">This may take a few seconds...</p>}
+            {redirectAttempts > 0 && (
+              <div className="mt-2 text-sm text-amber-600">
+                Redirect attempt {redirectAttempts} of 3...
+              </div>
+            )}
           </div>
         )}
+        <DebugInfo />
       </div>
     </div>
   );
