@@ -8,6 +8,9 @@ const ignoreWindowsDirs = process.env.NEXT_IGNORE_WINDOWS_DIRS !== 'false';
 // Get user's home directory
 const userHome = os.homedir();
 
+// Check if running in Vercel
+const isVercel = process.env.VERCEL === '1';
+
 const nextConfig: NextConfig = {
   eslint: {
     // Warning: This allows production builds to successfully complete even if
@@ -18,6 +21,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Set output mode to ensure proper artifacts on Vercel
+  output: isVercel ? 'standalone' : undefined,
+  // Set production dist directory - don't change on Vercel environments
+  distDir: isVercel ? '.next' : 'build',
   webpack: (config) => {
     // Handling modules not found errors for client-side usage
     config.resolve.fallback = {
@@ -69,9 +76,6 @@ const nextConfig: NextConfig = {
     
     return config;
   },
-  // Exclude specific paths from the production build
-  // This will prevent Next.js from traversing these directories
-  distDir: 'build',
   reactStrictMode: true
 };
 
