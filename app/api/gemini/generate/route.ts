@@ -145,40 +145,49 @@ export async function POST(request: NextRequest) {
     // Generate prompt based on content type
     let prompt = '';
     
-    switch (contentType) {
-      case 'summary':
-        prompt = `Please provide a comprehensive summary of the following text, capturing the main ideas and important details. Make sure the summary is clear, concise, and well-structured.\n\nText: ${text}`;
+    switch (type) {
+      case "bullets":
+        prompt = `${text}\n\nCreate bullet point notes from the above text.`;
         break;
-      case 'bullets':
-        prompt = `Extract the key points from the following text and present them as bullet points. Each point should be clear and concise, capturing an important concept or fact.\n\nText: ${text}`;
+      case "summary":
+        prompt = `${text}\n\nWrite a comprehensive summary of the above text.`;
         break;
-      case 'flashcards':
-        prompt = `Create a set of flashcards based on the following text. Each flashcard should have a question on one side and the answer on the other. Format as "Q: [question]\nA: [answer]" for each card. Focus on important concepts, definitions, and facts.\n\nText: ${text}`;
+      case "keyTerms":
+        prompt = `${text}\n\nExtract the key terms and definitions from the text above. For each key term, provide a definition. Format the result as follows:
+
+Term: [term name]
+Definition: [definition]
+
+Term: [term name]
+Definition: [definition]
+
+And so on. Make sure each term and definition appears only once and follows the exact format shown above. Do not repeat the words "Term:" or "Definition:" multiple times in succession.`;
         break;
-      case 'quiz':
-        prompt = `Create a quiz with multiple-choice questions based on the following text. For each question, provide 4 options (A, B, C, D) with one correct answer. Format as "Q: [question]\nA: [option]\nB: [option]\nC: [option]\nD: [option]\nCorrect: [letter]" for each question.\n\nText: ${text}`;
+      case "flashcards":
+        prompt = `${text}\n\nCreate flashcards based on the text above. Format each flashcard EXACTLY as follows:
+
+Q: [question text]
+A: [answer text]
+
+Q: [question text]
+A: [answer text]
+
+Make sure each flashcard follows this exact format with 'Q:' at the start of the question line and 'A:' at the start of the answer line, and have one blank line between flashcards.`;
         break;
-      case 'keyTerms':
-        prompt = `Extract all key terms, formulas, and concepts from the following text. For each term, provide a brief definition or explanation. 
+      case "quiz":
+        prompt = `${text}\n\nCreate a quiz with multiple choice questions based on the text above. Format each question exactly as follows:
 
-Format your response EXACTLY like this:
-Term: Artificial Intelligence
-Definition: The simulation of human intelligence processes by machines, especially computer systems.
+Q: [question text]
+A: [option A]
+B: [option B]
+C: [option C]
+D: [option D]
+Correct: [correct letter]
 
-Term: Machine Learning
-Definition: A subset of AI focused on algorithms that improve automatically through experience.
-
-Do not repeat "Term:" and "Definition:" multiple times in a row. Each pair should have exactly one Term: line followed by exactly one Definition: line.
-
-If there are any formulas in the text, list them separately in a section called "Formulas:" after all the terms.
-
-Text: ${text}`;
+Make sure each question follows this exact format, with each option on a new line. Use only A, B, C, or D as the correct answer. Provide at least 5 questions if the text has enough content. Make sure there are no extra blank lines between questions, options, or answers. Each question should test understanding of important concepts from the text.`;
         break;
       default:
-        return NextResponse.json(
-          { error: `Unsupported content type: ${type}` },
-          { status: 400 }
-        );
+        prompt = `${text}\n\nSummarize the key points from the above text.`;
     }
     
     // Try each endpoint until one works

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { extractTextFromFile } from '@/lib/file-processing';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
+import { saveNote } from '@/lib/data-service';
 
 // Define content types
 type ContentType = 'bullets' | 'summary' | 'keyTerms';
@@ -171,241 +172,151 @@ const StudentUpload = () => {
     );
   };
 
-  // Helper function to render key terms and formulas
-  const renderKeyTerms = () => {
-    if (!generatedContent.keyTerms) return null;
-    
+  // Helper function to render key terms and definitions
+  const renderKeyTerms = (content: string) => {
     try {
-      // Check for "Formulas" section separate from terms
-      const hasFormulasSection = generatedContent.keyTerms.includes("Formulas:") || 
-                                 generatedContent.keyTerms.includes("FORMULAS") ||
-                                 generatedContent.keyTerms.includes("Formulas");
-      
-      let termsContent = generatedContent.keyTerms;
-      let formulasContent = "";
-      
-      // Extract formulas section if it exists
-      if (hasFormulasSection) {
-        const parts = generatedContent.keyTerms.split(/formulas:?/i);
-        if (parts.length > 1) {
-          termsContent = parts[0].trim();
-          formulasContent = parts[1].trim();
+      if (!content) {
+        return <p>No key terms found.</p>;
+      }
+
+      // Extract formula data if present
+      let formulaContent = '';
+      if (content.includes('Formulas:')) {
+        const formulaParts = content.split('Formulas:');
+        content = formulaParts[0].trim();
+        formulaContent = formulaParts[1].trim();
+      }
+
+      let terms: { term: string; definition: string }[] = [];
+
+      // Improved regex pattern to better match the expected format from the API
+      const cleanTermPattern = /Term:\s*(.*?)(?:\s*\n|\r\n|\r)\s*Definition:\s*(.*?)(?=(?:\s*\n|\r\n|\r)\s*Term:|\s*$)/gs;
+      let match;
+      let found = false;
+
+      while ((match = cleanTermPattern.exec(content)) !== null) {
+        found = true;
+        const term = match[1].trim();
+        const definition = match[2].trim();
+        
+        // Only add if not a duplicate and both term and definition are non-empty
+        if (term && definition && !terms.some(t => t.term === term)) {
+          terms.push({ term, definition });
         }
       }
-      
-      // First try standard "Term:" "Definition:" format
-      const termPattern = /Term:\s*(.*?)\s*\n\s*Definition:\s*(.*?)(?=\n\s*Term:|$)/gs;
-      let match;
-      const terms = [];
-      
-      while ((match = termPattern.exec(termsContent)) !== null) {
-        terms.push({
-          term: match[1].trim(),
-          definition: match[2].trim()
-        });
+
+      // If no structured content found with the expected pattern, try alternative approaches
+      if (!found || terms.length === 0) {
+        // Look for lines that start with "Term:" and "Definition:"
+        const lines = content.split(/\n|\r\n|\r/).map(line => line.trim()).filter(line => line);
+        let currentTerm = '';
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          
+          if (line.startsWith('Term:')) {
+            currentTerm = line.substring(5).trim();
+          } else if (line.startsWith('Definition:') && currentTerm) {
+            const definition = line.substring(11).trim();
+            if (definition && !terms.some(t => t.term === currentTerm)) {
+              terms.push({ term: currentTerm, definition });
+              currentTerm = '';
+            }
+          }
+        }
+        
+        found = terms.length > 0;
       }
-      
-      // If we found terms in the expected format, render them
-      if (terms.length > 0) {
-        return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Key Terms</h2>
-              <div className="space-y-4">
-                {terms.map((item, index) => (
-                  <div key={index} className="border-b pb-2">
-                    <p className="font-bold">{item.term}</p>
-                    <p>{item.definition}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+
+      // If still no matches, try bullet format
+      if (!found || terms.length === 0) {
+        const bulletLines = content.split(/\n|\r\n|\r/).map(line => line.trim()).filter(line => line);
+        
+        for (let i = 0; i < bulletLines.length; i += 2) {
+          if (i + 1 < bulletLines.length) {
+            const term = bulletLines[i].replace(/^[•\-*]\s*/, '').trim();
+            const definition = bulletLines[i + 1].replace(/^[•\-*]\s*/, '').trim();
             
-            {formulasContent && (
-              <div>
-                <h2 className="text-xl font-semibold mb-2">Formulas</h2>
-                <div className="whitespace-pre-wrap">{formulasContent}</div>
-              </div>
-            )}
-          </div>
-        );
-      }
-      
-      // Try to detect key terms from repeated patterns in the text
-      // Look for "key: value" or "key - value" patterns
-      const lines = termsContent.split('\n').map(line => line.trim()).filter(Boolean);
-      const alternativeTerms = [];
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Check for terms followed by definitions separated by a hyphen or colon
-        const dashSeparated = line.match(/^([^-]+)\s*-\s*(.+)$/);
-        const colonSeparated = line.match(/^([^:]+):\s*(.+)$/);
-        
-        if (dashSeparated) {
-          alternativeTerms.push({
-            term: dashSeparated[1].trim(),
-            definition: dashSeparated[2].trim()
-          });
-        } else if (colonSeparated) {
-          alternativeTerms.push({
-            term: colonSeparated[1].trim(),
-            definition: colonSeparated[2].trim()
-          });
-        } 
-        // Check if this might be a term followed by a definition on the next line
-        else if (i + 1 < lines.length && !lines[i+1].includes('-') && !lines[i+1].includes(':')) {
-          // If the current line is short and the next line is longer, treat as term-definition
-          if (line.length < 50 && lines[i+1].length > line.length) {
-            alternativeTerms.push({
-              term: line,
-              definition: lines[i+1]
-            });
-            i++; // Skip the next line since we've used it
+            // Skip heading lines or empty entries
+            if (term && definition && 
+                !term.includes('Key Terms') && !term.includes('Formulas') && 
+                !terms.some(t => t.term === term)) {
+              terms.push({ term, definition });
+            }
           }
         }
       }
-      
-      // If we found terms in an alternative format, render them
-      if (alternativeTerms.length > 0) {
+
+      // If still no structured content found, display raw content as fallback
+      if (terms.length === 0) {
         return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Key Terms</h2>
-              <div className="space-y-4">
-                {alternativeTerms.map((item, index) => (
-                  <div key={index} className="border-b pb-2">
-                    <p className="font-bold">{item.term}</p>
-                    <p>{item.definition}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {formulasContent && (
+          <div className="space-y-4">
+            <div className="whitespace-pre-wrap">{content}</div>
+            {formulaContent && (
               <div>
-                <h2 className="text-xl font-semibold mb-2">Formulas</h2>
-                <div className="whitespace-pre-wrap">{formulasContent}</div>
+                <h3 className="text-lg font-semibold mt-4 mb-2">Formulas</h3>
+                <div className="whitespace-pre-wrap">{formulaContent}</div>
               </div>
             )}
           </div>
         );
       }
-      
-      // Last resort: if AI is returning "Definition" "Term" format (inverted format)
-      // This handles the case mentioned in the conversation
-      const invertedPattern = /Definition:\s*(.*?)\s*\n\s*Term:\s*(.*?)(?=\n\s*Definition:|$)/gs;
-      const invertedTerms = [];
-      
-      while ((match = invertedPattern.exec(termsContent)) !== null) {
-        invertedTerms.push({
-          definition: match[1].trim(),
-          term: match[2].trim()
-        });
-      }
-      
-      if (invertedTerms.length > 0) {
-        return (
-          <div>
-            <h2 className="text-xl font-semibold mb-3">Key Terms</h2>
-            <div className="space-y-4">
-              {invertedTerms.map((item, index) => (
-                <div key={index} className="border-b pb-2">
-                  <p className="font-bold">{item.term}</p>
+
+      return (
+        <div className="space-y-4">
+          {terms.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {terms.map((item, idx) => (
+                <div key={idx} className="bg-white shadow rounded-lg p-4">
+                  <h3 className="font-semibold text-indigo-600">{item.term}</h3>
                   <p>{item.definition}</p>
                 </div>
               ))}
             </div>
-          </div>
-        );
-      }
-      
-      // Fallback to displaying the raw content with proper line breaks
-      return (
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Key Terms and Formulas</h2>
-          <div className="whitespace-pre-wrap">{generatedContent.keyTerms}</div>
+          )}
+          {formulaContent && (
+            <div>
+              <h3 className="text-lg font-semibold mt-4 mb-2">Formulas</h3>
+              <div className="whitespace-pre-wrap">{formulaContent}</div>
+            </div>
+          )}
         </div>
       );
     } catch (error) {
       console.error("Error rendering key terms:", error);
-      // Fallback in case of error
-      return (
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Key Terms and Formulas</h2>
-          <div className="whitespace-pre-wrap">{generatedContent.keyTerms}</div>
-        </div>
-      );
+      return <div className="whitespace-pre-wrap">{content}</div>;
     }
   };
 
+  // Handle submit/save note
   const handleSubmit = async () => {
-    if (!uploadedFile || !extractedText || isProcessing) return;
-    
-    setIsProcessing(true);
+    if (!uploadedFile || !extractedText) {
+      toast.error('Please upload and process a file first');
+      return;
+    }
     
     try {
-      // Create FormData for API processing
-      const formData = new FormData();
-      formData.append('file', uploadedFile);
+    setIsProcessing(true);
       
-      const response = await fetch('/api/process', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to process note');
-      }
-      
-      const data = await response.json();
-      
-      // Extract notes, keyTerms, quizzes, formulas from response
-      const { notes, keyTerms, quizzes, formulas } = data;
-      
-      // Save note statistics to localStorage
-      const noteId = generateId();
-      saveNoteStatistics(uploadedFile.name || 'Untitled Note', noteId);
-      
-      // Store processed note
-      const savedNotes = JSON.parse(localStorage.getItem('savedNotes') || '[]');
-      const newNote = {
-        id: noteId,
+      // Prepare note data
+      const noteData = {
         title: uploadedFile.name || 'Untitled Note',
         content: extractedText,
-        keyTerms: generatedContent.keyTerms || "",
         summary: generatedContent.summary || "",
-        bullets: generatedContent.bullets || "",
-        quizzes: quizzes || [],
-        formulas: formulas || [],
-        date: new Date().toISOString()
+        keyTerms: generatedContent.keyTerms || "",
+        bullets: generatedContent.bullets || ""
       };
       
-      localStorage.setItem('savedNotes', JSON.stringify([...savedNotes, newNote]));
-      toast.success('Note saved successfully');
+      // Save note to database
+      const savedNote = await saveNote(noteData);
+      
+      toast.success('Note saved successfully to your account');
     } catch (error) {
-      console.error('Error processing note:', error);
-      toast.error('Error processing note. Please try again.');
+      console.error('Error saving note:', error);
+      toast.error('Error saving note. Please try again.');
     } finally {
       setIsProcessing(false);
     }
-  };
-  
-  // Function to save note statistics to localStorage
-  const saveNoteStatistics = (noteTitle: string, noteId: string) => {
-    const notesStats = JSON.parse(localStorage.getItem('notesStatistics') || '[]');
-    const newNoteStat = {
-      id: noteId,
-      title: noteTitle,
-      date: new Date().toISOString()
-    };
-    localStorage.setItem('notesStatistics', JSON.stringify([...notesStats, newNoteStat]));
-  };
-
-  // Generate a random ID for notes
-  const generateId = () => {
-    return Math.random().toString(36).substr(2, 9);
   };
 
   return (
@@ -559,7 +470,7 @@ const StudentUpload = () => {
         </motion.div>
       </div>
       
-      {(isProcessing || generatedContent.summary || generatedContent.bullets || generatedContent.keyTerms) ? (
+      {(isProcessing || generatedContent.summary || generatedContent.bullets) ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -574,7 +485,7 @@ const StudentUpload = () => {
             <TabsList className="mb-4">
               <TabsTrigger value="bullets">Bullet Points</TabsTrigger>
               <TabsTrigger value="summary">Full Summary</TabsTrigger>
-              <TabsTrigger value="formulas">Formulas & Key Terms</TabsTrigger>
+              <TabsTrigger value="keyTerms">Key Terms</TabsTrigger>
             </TabsList>
             
             <Card>
@@ -621,20 +532,20 @@ const StudentUpload = () => {
                   )}
                 </TabsContent>
                 
-                <TabsContent value="formulas" className="m-0">
+                <TabsContent value="keyTerms" className="m-0">
                   {isProcessing ? (
                     <div className="min-h-[200px] flex items-center justify-center">
                       <p className="text-muted-foreground flex items-center">
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
-                        Extracting formulas and key terms...
+                        Generating key terms...
                       </p>
                     </div>
                   ) : generatedContent.keyTerms ? (
-                    renderKeyTerms()
+                    renderKeyTerms(generatedContent.keyTerms)
                   ) : (
                     <div className="min-h-[200px] flex items-center justify-center">
                       <p className="text-muted-foreground">
-                        No formulas or key terms extracted yet
+                        No key terms generated yet
                       </p>
                     </div>
                   )}
@@ -659,7 +570,7 @@ const StudentUpload = () => {
                   localStorage.setItem('notesPendingFileName', uploadedFile?.name || 'Untitled Notes');
                   
                   toast.success('Notes ready!', {
-                    description: 'Redirecting to flashcards & quizzes page...'
+                    description: 'Redirecting to create flashcards & quizzes in your account...'
                   });
                   
                   setTimeout(() => {

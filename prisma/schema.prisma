@@ -6,10 +6,80 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../lib/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id            String       @id
+  email         String       @unique
+  name          String?
+  image         String?
+  role          String       @default("student")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  lastSignIn    DateTime     @default(now()) @map("last_sign_in")
+  notes         Note[]
+  flashcardDecks FlashcardDeck[]
+  quizResults   QuizResult[]
+
+  @@map("users")
+}
+
+// Note model
+model Note {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @db.Text
+  summary   String?  @db.Text
+  keyTerms  String?  @db.Text @map("key_terms")
+  bullets   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+// Flashcard Deck model
+model FlashcardDeck {
+  id          String      @id @default(uuid())
+  name        String
+  progress    Float       @default(0)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  lastStudied DateTime?   @map("last_studied")
+  userId      String      @map("user_id")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashcards  Flashcard[]
+
+  @@map("flashcard_decks")
+}
+
+// Flashcard model
+model Flashcard {
+  id        String        @id @default(uuid())
+  question  String
+  answer    String
+  mastered  Boolean       @default(false)
+  deckId    String        @map("deck_id")
+  deck      FlashcardDeck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@map("flashcards")
+}
+
+// Quiz Result model
+model QuizResult {
+  id        String   @id @default(uuid())
+  score     Float
+  questions Int
+  correct   Int
+  createdAt DateTime @default(now()) @map("created_at") 
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("quiz_results")
 }

@@ -1,10 +1,10 @@
-import NextAuth from "next-auth";
+import NextAuth, { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import GithubProvider from "next-auth/providers/github";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { syncUserWithDatabase } from "@/lib/auth-sync";
 
-// Configure NextAuth handlers
-const handler = NextAuth({
+// Export auth options for reuse in other routes
+export const authOptions: AuthOptions = {
   debug: process.env.NODE_ENV === 'development',
   providers: [
     GoogleProvider({
@@ -25,146 +25,104 @@ const handler = NextAuth({
   ],
   pages: {
     signIn: "/auth",
+    // Define your callback URL explicitly to prevent redirect issues
+    newUser: "/dashboard-redirect",
   },
   callbacks: {
     async signIn({ user, account }) {
       // Handle both Google and GitHub OAuth sign ins
       if (account?.provider !== "google" && account?.provider !== "github") return false;
-
       console.log(`User authenticated with ${account.provider}:`, user.email);
       
       try {
-        // Store user in Supabase database
-        const supabase = createServerSupabaseClient();
+        // Sync user details with database
+        const syncedUser = await syncUserWithDatabase({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          // Don't set a default role here, let the user select it later
+        });
         
-        // Check if user already exists
-        const { data: existingUser, error: queryError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("email", user.email!)
-          .maybeSingle();
-        
-        if (queryError) {
-          console.error("Error checking for existing user:", queryError);
-          // Don't fail the sign-in
-        }
-        
-        if (!existingUser) {
-          // User doesn't exist, create a new record - but don't set a role yet
-          console.log("Creating new user in Supabase:", user.email);
-          const { error: insertError } = await supabase
-            .from("users")
-            .insert({
-              email: user.email!,
-              name: user.name,
-              image: user.image,
-              // Don't set a role - we'll select it after auth
-              created_at: new Date().toISOString(),
-              last_sign_in: new Date().toISOString(),
-            });
-          
-          if (insertError) {
-            console.error("Error creating user in Supabase:", insertError);
-          } else {
-            console.log("Successfully created user in Supabase:", user.email);
-          }
+        // Check if session-only mode is active
+        if (syncedUser._sessionOnly) {
+          console.log(`User data saved in session only (not in database): ${user.email}`);
         } else {
-          // User exists, update last sign-in time
-          console.log("Updating existing user in Supabase:", user.email);
-          const { error: updateError } = await supabase
-            .from("users")
-            .update({
-              last_sign_in: new Date().toISOString(),
-              // Update other fields that might have changed
-              name: user.name,
-              image: user.image,
-            })
-            .eq("email", user.email!);
-          
-          if (updateError) {
-            console.error("Error updating user in Supabase:", updateError);
-          } else {
-            console.log("Successfully updated user in Supabase:", user.email);
-          }
+          console.log(`User details synced with database: ${user.email}`);
         }
+        
+        // Always continue signin process regardless of database sync result
+        return true;
       } catch (error) {
-        console.error("Error in signIn callback:", error);
-        // Don't fail the sign-in even if Supabase storage fails
+        console.error(`Error syncing user with database:`, error);
+        // Don't fail the sign-in process if database sync fails
+        return true;
       }
-      
-      return true;
     },
     async session({ session, token }) {
       // Add user data from token to session
       if (token && session.user) {
-        console.log("Session callback called, token:", token);
         session.user.id = token.sub;
         
-        // Add role from token
+        // Add role from token if available
         if (token.role) {
+          console.log(`Setting session role from token: ${token.role}`);
           session.user.role = token.role;
-          console.log("Setting role from token:", token.role);
+        } else {
+          console.log("No role found in token");
         }
         
-        try {
-          // Get user data from Supabase
-          const supabase = createServerSupabaseClient();
-          const { data: userData, error } = await supabase
-            .from("users")
-            .select("*")
-            .eq("email", session.user.email!)
-            .maybeSingle();
-          
-          if (userData && !error) {
-            // Add Supabase user data to session
-            session.user.role = userData.role;
-            console.log("Setting role from database:", userData.role);
-            // Make sure to include image from database if available
-            if (userData.image) {
-              session.user.image = userData.image;
-            }
-            // You can add other Supabase fields as needed
-            session.user.supabaseId = userData.id;
-            
-            console.log("Session updated with user data:", {
-              role: userData.role,
-              hasImage: !!userData.image
-            });
-          } else if (error) {
-            console.error("Cannot get user data from Supabase:", error.message);
-          }
-        } catch (error) {
-          console.error("Error in session callback:", error);
+        // Add flag for session-only mode if present
+        if (token.sessionOnly) {
+          session.user.sessionOnly = true;
         }
+        
+        // Don't set a default role automatically - let the client handle role selection
+        console.log(`Final session user:`, session.user);
       }
       return session;
     },
-    async jwt({ token, account, profile, user }) {
-      // Persist the OAuth provider's data to token
-      if (account) {
-        token.accessToken = account.access_token;
-        token.provider = account.provider;
-      }
-
-      // If we have user data available, add the role
-      if (user) {
-        // Add user role to token
-        const supabase = createServerSupabaseClient();
-        const { data: userData, error } = await supabase
-          .from("users")
-          .select("role")
-          .eq("email", user.email!)
-          .maybeSingle();
+    async jwt({ token, account, user, trigger, session }) {
+      // Initial sign in
+      if (account && user) {
+        console.log("First-time token creation for user:", user.email);
+        token.email = user.email;
         
-        if (userData && userData.role) {
-          token.role = userData.role;
+        // Check if user has the sessionOnly flag and add it to the token
+        if ((user as any)._sessionOnly) {
+          token.sessionOnly = true;
+        }
+        
+        // Don't set role here - let the user select it
+      }
+      
+      // If we're updating the session, apply changes to token
+      if (trigger === 'update' && session?.user?.role) {
+        console.log(`Updating token with new role: ${session.user.role}`);
+        token.role = session.user.role;
+        
+        // Maintain sessionOnly flag if it exists
+        if (session.user.sessionOnly) {
+          token.sessionOnly = true;
         }
       }
       
       return token;
     },
+    async redirect({ url, baseUrl }) {
+      console.log(`NextAuth redirect called with URL: ${url}, baseUrl: ${baseUrl}`);
+      // If the URL is relative or on the same host, allow it
+      if (url.startsWith(baseUrl) || url.startsWith('/')) {
+        return url;
+      }
+      // For absolute URLs not on the same host, redirect to dashboard redirect
+      return `${baseUrl}/dashboard-redirect`;
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
-});
+};
+
+// Configure NextAuth handlers
+const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST }; 

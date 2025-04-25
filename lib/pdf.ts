@@ -1,16 +1,43 @@
-// Import types only, actual library will be dynamically imported
-import type { TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api';
+/**
+ * PDF processing utility functions
+ * Uses PDF.js loaded from CDN to avoid Node.js dependencies that cause errors in the browser
+ */
 
-// Dynamic imports that only run on client side
-let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+// Track if PDF.js is loaded
+let pdfJsLoaded = false;
+let pdfJsLib: any = null;
 
-// Initialize PDF.js only on client side
-async function initPdfJs() {
-  if (typeof window !== 'undefined' && !pdfjsLib) {
-    // Dynamically import PDF.js only on the client
-    pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 
-      `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+/**
+ * Dynamically load PDF.js from CDN
+ */
+async function loadPdfJs(): Promise<void> {
+  if (typeof window === 'undefined' || pdfJsLoaded) return;
+
+  try {
+    // Only load in browser environment
+    const version = '3.11.174'; // A stable version that works well in browsers
+    
+    // Add PDF.js script to the page
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.min.js`;
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(new Error('Failed to load PDF.js'));
+      document.head.appendChild(script);
+    });
+    
+    // Add the worker
+    // @ts-ignore - PDF.js is loaded dynamically
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.js`;
+    
+    // @ts-ignore - PDF.js is loaded dynamically
+    pdfJsLib = window.pdfjsLib;
+    pdfJsLoaded = true;
+    console.log("PDF.js loaded successfully from CDN");
+  } catch (error) {
+    console.error("Failed to load PDF.js from CDN:", error);
+    throw new Error("Failed to initialize PDF processing");
   }
 }
 
@@ -21,35 +48,29 @@ async function initPdfJs() {
  */
 export async function extractTextFromPdf(pdfFile: File): Promise<string> {
   try {
-    // Initialize PDF.js (only on client)
-    await initPdfJs();
+    // Load PDF.js
+    await loadPdfJs();
     
-    if (!pdfjsLib) {
-      throw new Error('PDF.js could not be initialized (are you on server side?)');
+    if (!pdfJsLib) {
+      throw new Error('PDF.js library not available');
     }
     
     // Convert file to ArrayBuffer
     const arrayBuffer = await fileToArrayBuffer(pdfFile);
     
-    // Load PDF document
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    // Load the PDF
+    const loadingTask = pdfJsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
     
-    // Get total number of pages
-    const numPages = pdf.numPages;
     let fullText = '';
     
     // Extract text from each page
-    for (let i = 1; i <= numPages; i++) {
+    for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
-        .map((item: any) => {
-          // Check if item is TextItem (has str property)
-          return 'str' in item ? item.str : '';
-        })
+        .map((item: any) => item.str)
         .join(' ');
-      
       fullText += pageText + '\n\n';
     }
     

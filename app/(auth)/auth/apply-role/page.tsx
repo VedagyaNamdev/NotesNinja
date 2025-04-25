@@ -52,30 +52,40 @@ export default function ApplyRolePage() {
 
       try {
         setHasTriedApplying(true);
-        // Get the selected role from localStorage
-        const selectedRole = localStorage.getItem('selectedRole') as 'student' | 'teacher' | null;
+        // Get the selected role from localStorage, with fallbacks
+        const selectedRole = 
+          localStorage.getItem('selectedRole') || 
+          localStorage.getItem('lastSelectedRole') || 
+          sessionStorage.getItem('redirectRole') as 'student' | 'teacher' | null;
         
         if (!selectedRole) {
-          console.error('No role found in localStorage');
+          console.error('No role found in storage');
           setError('No role was selected. Please go back and choose your role first.');
           return;
         }
 
-        console.log(`Found role in localStorage: ${selectedRole}`);
+        console.log(`Found role in storage: ${selectedRole}`);
         setMessage(`Setting up your ${selectedRole} account...`);
         // Save the role for redirection
         setSelectedRoleForRedirect(selectedRole);
+        
+        // Ensure role is stored in all locations
+        localStorage.setItem('selectedRole', selectedRole);
+        localStorage.setItem('lastSelectedRole', selectedRole);
+        sessionStorage.setItem('redirectRole', selectedRole);
         
         // Apply the role
         const success = await updateRole(selectedRole);
         
         if (success) {
           console.log(`Successfully updated role to ${selectedRole}`);
-          // Force direct navigation - no Next.js router
-          forceRedirectToDashboard(selectedRole);
+          // The updateRole function now handles redirection itself
+          // Just wait for it to complete
+          setMessage(`Role set to ${selectedRole}. Redirecting to dashboard...`);
         } else {
-          console.error('Failed to update role');
-          setError('Failed to update your role. Please try again.');
+          console.error('Failed to update role, trying forced redirect');
+          // Force direct navigation as fallback
+          forceRedirectToDashboard(selectedRole);
         }
       } catch (err) {
         console.error('Error applying role:', err);

@@ -8,16 +8,26 @@ import { extractTextFromPdf } from './pdf';
  */
 export async function extractTextFromFile(file: File): Promise<string> {
   const fileType = file.type;
+  const fileName = file.name;
+  
+  console.log(`Processing file: ${fileName} (${fileType})`);
   
   try {
     if (fileType.startsWith('image/')) {
       // Process image files with OCR
-      return await extractTextFromImage(file);
+      console.log(`Starting OCR for image: ${fileName}`);
+      const text = await extractTextFromImage(file);
+      console.log(`OCR completed for: ${fileName}`);
+      return text;
     } else if (fileType === 'application/pdf') {
       // Process PDF files
-      return await extractTextFromPdf(file);
+      console.log(`Starting PDF extraction for: ${fileName}`);
+      const text = await extractTextFromPdf(file);
+      console.log(`PDF extraction completed for: ${fileName}`);
+      return text;
     } else if (fileType === 'text/plain') {
       // Process text files
+      console.log(`Reading text file: ${fileName}`);
       return await readTextFile(file);
     } else if (fileType.includes('word') || 
               fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -26,10 +36,19 @@ export async function extractTextFromFile(file: File): Promise<string> {
       // In a production app, you'd add a Word document parser library
       throw new Error('Word documents cannot be processed directly. Please export as PDF or text file.');
     } else {
-      throw new Error(`Unsupported file type: ${fileType}`);
+      // If filetype is empty but filename has image extension, try to process as image
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+      if (!fileType && imageExtensions.some(ext => fileName.toLowerCase().endsWith(ext))) {
+        console.log(`File type not detected but has image extension. Trying OCR for: ${fileName}`);
+        const text = await extractTextFromImage(file);
+        console.log(`OCR completed for: ${fileName}`);
+        return text;
+      }
+      
+      throw new Error(`Unsupported file type: ${fileType || 'Unknown'} for file ${fileName}`);
     }
   } catch (error) {
-    console.error('Text extraction error:', error);
+    console.error(`Text extraction error for file ${fileName}:`, error);
     throw error;
   }
 }
@@ -43,7 +62,10 @@ async function readTextFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
+    reader.onerror = (error) => {
+      console.error('Error reading text file:', error);
+      reject(error);
+    };
     reader.readAsText(file);
   });
 } 

@@ -1,42 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { db } from '@/lib/db';
 
+/**
+ * API endpoint to get the current user's data
+ * Falls back to session data if database access fails
+ */
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession();
-    
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
     
-    // Get the full user data from Supabase
-    const supabase = createServerSupabaseClient();
-    const { data: userData, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', session.user.email!)
-      .maybeSingle();
+    // Create session-only fallback user
+    const sessionOnlyUser = {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      image: session.user.image,
+      role: session.user.role || 'student',
+      _sessionOnly: true
+    };
     
-    if (error) {
-      console.error('Error fetching user data:', error);
-      return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    try {
+      // Try to get user data from database
+      const userData = await db.user.findUnique({
+        where: { id: session.user.id }
+      });
+      
+      if (!userData) {
+        console.warn('User not found in database, using session data');
+        return NextResponse.json({
+          ...sessionOnlyUser,
+          message: 'User not found in database'
+        });
+      }
+      
+      // Return database user data
+      return NextResponse.json(userData);
+    } catch (dbError) {
+      console.error('Error accessing database:', dbError);
+      
+      // Return session data as fallback
+      return NextResponse.json({
+        ...sessionOnlyUser,
+        message: 'Error accessing database, using session data'
+      });
     }
-    
-    if (!userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-    
-    // Return user data including profile image
-    return NextResponse.json({
-      id: userData.id,
-      name: userData.name,
-      email: userData.email,
-      image: userData.image,
-      role: userData.role,
-    });
-  } catch (err) {
-    console.error('Error in user API route:', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error in user API:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to get user data', 
+        details: error.message
+      },
+      { status: 500 }
+    );
   }
 } 

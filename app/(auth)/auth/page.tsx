@@ -15,6 +15,7 @@ import { GraduationCap, Users, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth, UserRole } from '@/hooks/use-auth';
 import { signIn } from 'next-auth/react';
+import { toast } from 'sonner';
 
 export default function AuthPage() {
   const [selectedRole, setSelectedRole] = useState<UserRole>(null);
@@ -30,22 +31,32 @@ export default function AuthPage() {
 
   // If already authenticated with a role, redirect to dashboard
   useEffect(() => {
-    if (isAuthenticated && userRole) {
-      router.push(`/${userRole}/dashboard`);
+    if (isAuthenticated) {
+      if (userRole) {
+        // User has a role, redirect to the dashboard
+        console.log(`User authenticated with role ${userRole}, redirecting to dashboard`);
+        router.push(`/${userRole}/dashboard`);
+      } else {
+        // User is authenticated but doesn't have a role
+        console.log('User authenticated without role, redirecting to dashboard-redirect');
+        router.push('/dashboard-redirect');
+      }
     }
   }, [isAuthenticated, userRole, router]);
 
   // Handle role selection - move to provider selection
-  const handleRoleContinue = () => {
+  const handleRoleContinue = async () => {
     if (!selectedRole) return;
-    
-    // Store the selected role in localStorage immediately to ensure it's available
-    localStorage.setItem('selectedRole', selectedRole);
-    console.log('Stored role in localStorage:', selectedRole);
     
     if (user) {
       // User is already authenticated, just update role
-      updateRole(selectedRole);
+      const success = await updateRole(selectedRole);
+      if (!success) {
+        // If role update failed, show error
+        toast.error("Error updating role", {
+          description: "Please try again"
+        });
+      }
     } else {
       // Move to provider selection
       setStep('provider');
@@ -54,25 +65,9 @@ export default function AuthPage() {
 
   // Handle provider selection
   const handleProviderSelect = (provider: 'google' | 'github') => {
-    // Verify the selected role is in localStorage
-    if (!selectedRole || localStorage.getItem('selectedRole') !== selectedRole) {
-      localStorage.setItem('selectedRole', selectedRole!);
-      console.log('Re-storing selectedRole before OAuth:', selectedRole);
-    }
-    
-    // Store the selected role in sessionStorage as well for redundancy
-    sessionStorage.setItem('redirectRole', selectedRole!);
-    
-    // Set a specific callbackUrl that bypasses the apply-role page for deployment
-    // Include the role directly in the URL to ensure it's passed through the OAuth flow
-    const callbackUrl = `${window.location.origin}/dashboard-redirect?role=${selectedRole}`;
-    console.log(`Setting callbackUrl to: ${callbackUrl}`);
-    
-    // Redirect to OAuth
-    signIn(provider, { 
-      callbackUrl,
-      redirect: true
-    });
+    // Use the login function from useAuth to handle authentication
+    const callbackUrl = `/dashboard-redirect?role=${selectedRole}`;
+    signIn(provider, { callbackUrl, redirect: true });
   };
 
   // Go back to role selection

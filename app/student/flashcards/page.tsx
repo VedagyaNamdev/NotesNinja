@@ -9,11 +9,27 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenText, ChevronLeft, ChevronRight, RotateCcw, CheckCircle2, Trash2 } from 'lucide-react';
+import { BookOpenText, ChevronLeft, ChevronRight, RotateCcw, CheckCircle2, Trash2, Loader2, Plus, Play, CheckCircle, RefreshCcw, Star, Settings, Edit, Info, BookText, BookPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import QuizComponent from '@/components/QuizComponent';
+import { 
+  fetchFlashcardDecks, 
+  createFlashcardDeck, 
+  updateDeckProgress, 
+  updateCardsMastery, 
+  deleteFlashcardDeck, 
+  saveQuizResult,
+  migrateDataFromLocalStorage 
+} from '@/lib/data-service';
+
+// Add debug panel import - only imported in development environment
+const QuizDebugPanel = process.env.NODE_ENV !== 'production' 
+  ? require('@/components/debug/QuizDebugPanel').default 
+  : null;
 
 // Define interfaces for type safety
 interface Flashcard {
+  id?: string;
   question: string;
   answer: string;
   mastered: boolean;
@@ -43,6 +59,7 @@ interface FlashcardDeck {
   id: string;
   name: string;
   cards: Flashcard[];
+  flashcards?: Flashcard[]; // From database
   progress: number;
   createdAt: string;
   lastStudied: string | null;
@@ -50,7 +67,7 @@ interface FlashcardDeck {
 
 export default function StudentFlashcards() {
   // Authentication check
-  const { isAuthenticated, userRole } = useAuth();
+  const { isAuthenticated, userRole, user } = useAuth();
   const router = useRouter();
   
   React.useEffect(() => {
@@ -67,63 +84,117 @@ export default function StudentFlashcards() {
   const [markedCorrect, setMarkedCorrect] = useState<number[]>([]);
   const [selectedDeckIndex, setSelectedDeckIndex] = useState(0);
   
-  // State for storing decks from localStorage
+  // State for storing decks from database
   const [decks, setDecks] = useState<FlashcardDeck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataMigrated, setDataMigrated] = useState(false);
 
   // State for handling notes from upload page
   const [pendingNotes, setPendingNotes] = useState<string | null>(null);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [showNotesImport, setShowNotesImport] = useState(false);
 
-  // Sample quiz data
+  // State for quiz generation
   const [quizContent, setQuizContent] = useState<string | null>(null);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [selectedQuizText, setSelectedQuizText] = useState<string>('');
 
-  // Quiz state for handling answers and results
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
-  const [showResults, setShowResults] = useState(false);
+  // Function to migrate data from localStorage to database
+  const migrateData = async () => {
+    try {
+      setLoading(true);
+      const result = await migrateDataFromLocalStorage();
+      
+      if (result.migrated) {
+        toast.success('Data migrated successfully', {
+          description: 'Your data has been moved to the database'
+        });
+        setDataMigrated(true);
+      }
+      
+      // Load data from database after migration
+      loadDecksFromDatabase();
+    } catch (error) {
+      console.error('Error migrating data:', error);
+      toast.error('Failed to migrate data', {
+        description: 'Please try again later'
+      });
+      setLoading(false);
+    }
+  };
 
-  // Load flashcard decks from localStorage
+  // Load flashcard decks from database
+  const loadDecksFromDatabase = async () => {
+    try {
+      setLoading(true);
+      
+      const data = await fetchFlashcardDecks();
+      
+      // The API might return an array directly or an object with a decks property
+      // Handle both formats to ensure compatibility
+      const dbDecks = Array.isArray(data) ? data : (data.decks || []);
+      
+      // Format decks for component use
+      const formattedDecks: FlashcardDeck[] = dbDecks.map((deck: any) => ({
+        id: deck.id,
+        name: deck.name,
+        cards: (deck.flashcards || []).map((card: any) => ({
+          id: card.id,
+          question: card.question,
+          answer: card.answer,
+          mastered: card.mastered
+        })),
+        progress: deck.progress || 0,
+        createdAt: deck.createdAt || deck.created_at || new Date().toISOString(),
+        lastStudied: deck.lastStudied || deck.last_studied || null
+      }));
+      
+      setDecks(formattedDecks);
+      
+      // If no db decks but decks in localStorage, offer migration
+      if (formattedDecks.length === 0) {
+        const localDecks = localStorage.getItem('flashcardDecks');
+        if (localDecks && JSON.parse(localDecks).length > 0 && !dataMigrated) {
+          toast("Local data detected", {
+            description: "Would you like to migrate your local data to the database?",
+            action: {
+              label: "Migrate",
+              onClick: () => migrateData()
+            },
+            duration: 10000,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading flashcard decks:', error);
+      toast.error('Failed to load flashcard decks');
+      
+      // Fallback to sample data if no decks are available
+      setDecks([{
+        id: 'sample-1',
+        name: 'Physics Concepts',
+        cards: sampleCards.map((card: SampleCard): Flashcard => ({
+          question: card.front,
+          answer: card.back,
+          mastered: false
+        })),
+        progress: 0,
+        createdAt: new Date().toISOString(),
+        lastStudied: null
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load data when component mounts
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        // Load flashcard decks
-        const savedDecks = JSON.parse(localStorage.getItem('flashcardDecks') || '[]');
-        setDecks(savedDecks);
-        
-        // Check if there's a selected deck index in localStorage (from dashboard)
-        const storedDeckIndex = localStorage.getItem('selectedDeckIndex');
-        if (storedDeckIndex && savedDecks.length > 0) {
-          const index = parseInt(storedDeckIndex);
-          if (!isNaN(index) && index >= 0 && index < savedDecks.length) {
-            setSelectedDeckIndex(index);
-            
-            // Clear the stored index so it doesn't persist across sessions
-            localStorage.removeItem('selectedDeckIndex');
-          }
-        }
-        
-        // If no decks are available, use the sample data
-        if (savedDecks.length === 0) {
-          setDecks([
-            {
-              id: 'sample-1',
-              name: 'Physics Concepts',
-              cards: sampleCards.map((card: SampleCard): Flashcard => ({
-                question: card.front,
-                answer: card.back,
-                mastered: false
-              })),
-              progress: 0,
-              createdAt: new Date().toISOString(),
-              lastStudied: null
-            }
-          ]);
-        }
-
-        // Check for pending notes from upload page
+    if (isAuthenticated && user?.id) {
+      // Load flashcard decks from database
+      loadDecksFromDatabase();
+      
+      // Check for pending notes from upload page
+      if (typeof window !== 'undefined') {
         const pendingNotesText = localStorage.getItem('notesPendingForFlashcards');
         const pendingNotesFileName = localStorage.getItem('notesPendingFileName');
         
@@ -134,14 +205,9 @@ export default function StudentFlashcards() {
           // Optional: Set the quiz text from pending notes 
           setSelectedQuizText(pendingNotesText);
         }
-        
-      } catch (error) {
-        console.error('Error loading flashcard decks:', error);
-      } finally {
-        setLoading(false);
       }
     }
-  }, []);
+  }, [isAuthenticated, user?.id]);
 
   // Get the current deck and its cards
   const currentDeck = decks[selectedDeckIndex] || { 
@@ -198,36 +264,56 @@ export default function StudentFlashcards() {
     },
   ];
 
-  // Save progress to localStorage
-  const saveProgress = () => {
-    if (decks.length === 0) return;
+  // Save progress to database
+  const saveProgress = async () => {
+    if (decks.length === 0 || !currentDeck.id) return;
     
-    // Calculate progress percentage
-    const progress = Math.round((markedCorrect.length / flashcards.length) * 100);
-    
-    // Update the current deck with progress
-    const updatedDecks = [...decks];
-    updatedDecks[selectedDeckIndex] = {
-      ...currentDeck,
-      progress: progress,
-      lastStudied: new Date().toISOString()
-    };
-    
-    // Update cards mastery status
-    updatedDecks[selectedDeckIndex].cards = currentDeck.cards.map((card: Flashcard, index: number) => ({
-      ...card,
-      mastered: markedCorrect.includes(index)
-    }));
-    
-    // Save to localStorage
-    localStorage.setItem('flashcardDecks', JSON.stringify(updatedDecks));
-    setDecks(updatedDecks);
+    try {
+      // Calculate progress percentage
+      const progress = Math.round((markedCorrect.length / flashcards.length) * 100);
+      
+      // Update the local state first for immediate feedback
+      const updatedDecks = [...decks];
+      updatedDecks[selectedDeckIndex] = {
+        ...currentDeck,
+        progress: progress,
+        lastStudied: new Date().toISOString(),
+        cards: currentDeck.cards.map((card: Flashcard, index: number) => ({
+          ...card,
+          mastered: markedCorrect.includes(index)
+        }))
+      };
+      
+      setDecks(updatedDecks);
+      toast.success('Progress saved');
+      
+      try {
+        // Update deck progress in database
+        await updateDeckProgress(currentDeck.id, progress, new Date());
+        
+        // Update cards mastery
+        const masteredCardIds = markedCorrect
+          .map(index => flashcards[index]?.id)
+          .filter(id => id) as string[];
+        
+        if (masteredCardIds.length > 0) {
+          await updateCardsMastery(currentDeck.id, masteredCardIds, true);
+        }
+      } catch (dbError) {
+        console.error('Error saving progress to database:', dbError);
+        // We don't show an error toast because the local state is already updated
+        // Instead, we silently log the error and continue
+      }
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      toast.error('Error saving progress, but your changes were saved locally');
+    }
   };
 
   // Handle deck change
-  const changeDeck = (index: number) => {
+  const changeDeck = async (index: number) => {
     // Save current progress before changing
-    saveProgress();
+    await saveProgress();
     
     // Reset state for the new deck
     setSelectedDeckIndex(index);
@@ -266,24 +352,43 @@ export default function StudentFlashcards() {
     }, 300);
   };
 
-  const markCorrect = () => {
+  const markCorrect = async () => {
     if (!markedCorrect.includes(currentCardIndex)) {
       const newMarkedCorrect = [...markedCorrect, currentCardIndex];
       setMarkedCorrect(newMarkedCorrect);
       
-      // Auto-save progress when marking cards
-      const updatedDecks = [...decks];
-      if (updatedDecks[selectedDeckIndex]) {
-        const progress = Math.round((newMarkedCorrect.length / flashcards.length) * 100);
-        updatedDecks[selectedDeckIndex].progress = progress;
-        
-        // Update specific card
-        if (updatedDecks[selectedDeckIndex].cards[currentCardIndex]) {
-          updatedDecks[selectedDeckIndex].cards[currentCardIndex].mastered = true;
+      // Update progress and card mastery in database
+      try {
+        if (currentDeck.id && flashcards[currentCardIndex]?.id) {
+          const cardId = flashcards[currentCardIndex].id as string;
+          
+          // Update card mastery
+          await updateCardsMastery(currentDeck.id, [cardId], true);
+          
+          // Update progress
+          const progress = Math.round((newMarkedCorrect.length / flashcards.length) * 100);
+          await updateDeckProgress(currentDeck.id, progress, new Date());
+          
+          // Update local state
+          const updatedDecks = [...decks];
+          if (updatedDecks[selectedDeckIndex]) {
+            updatedDecks[selectedDeckIndex].progress = progress;
+            
+            // Update specific card
+            const cardIndex = updatedDecks[selectedDeckIndex].cards.findIndex(
+              card => card.id === cardId
+            );
+            
+            if (cardIndex !== -1) {
+              updatedDecks[selectedDeckIndex].cards[cardIndex].mastered = true;
+            }
+            
+            setDecks(updatedDecks);
+          }
         }
-        
-        localStorage.setItem('flashcardDecks', JSON.stringify(updatedDecks));
-        setDecks(updatedDecks);
+      } catch (error) {
+        console.error('Error updating card mastery:', error);
+        // Continue even if API fails
       }
     }
     nextCard();
@@ -312,7 +417,6 @@ export default function StudentFlashcards() {
       const data = await response.json();
       setQuizContent(data.content);
     } catch (error) {
-      console.error('Error generating quiz:', error);
       toast.error('Failed to generate quiz', {
         description: 'Please try again later'
       });
@@ -322,150 +426,30 @@ export default function StudentFlashcards() {
   };
 
   // Function to handle quiz submission
-  const submitQuiz = (score: number, totalQuestions: number) => {
-    // Calculate percentage
-    const percentage = Math.round((score / totalQuestions) * 100);
-    
-    // Get existing quiz results
-    const existingResults = JSON.parse(localStorage.getItem('quizResults') || '[]');
-    
-    // Add new result
-    const newResult = {
-      date: new Date().toISOString(),
-      score: percentage,
-      questions: totalQuestions,
-      correct: score
-    };
-    
-    // Save updated results
-    localStorage.setItem('quizResults', JSON.stringify([...existingResults, newResult]));
-    
-    // Show success message
-    toast.success(`Quiz completed with score: ${percentage}%`);
-  };
-
-  // Function to render a quiz
-  const renderQuiz = (content: string) => {
-    // Parse quiz questions from format Q: ... A: ... B: ... C: ... D: ... Correct: ...
-    const quizPattern = /Q:\s*(.*?)\s*\n\s*A:\s*(.*?)\s*\n\s*B:\s*(.*?)\s*\n\s*C:\s*(.*?)\s*\n\s*D:\s*(.*?)\s*\n\s*Correct:\s*([A-D])/gs;
-    const questions: QuizQuestion[] = [];
-    
-    let match;
-    while ((match = quizPattern.exec(content)) !== null) {
-      if (match[1] && match[2] && match[3] && match[4] && match[5] && match[6]) {
-        questions.push({
-          question: match[1].trim(),
-          options: {
-            A: match[2].trim(),
-            B: match[3].trim(),
-            C: match[4].trim(),
-            D: match[5].trim()
-          },
-          correct: match[6].trim()
-        });
+  const submitQuiz = async (score: number, totalQuestions: number) => {
+    try {
+      if (totalQuestions <= 0) {
+        toast.error('Could not save quiz result: Invalid quiz data');
+        return;
       }
+      
+      // Calculate percentage
+      const percentage = Math.round((score / totalQuestions) * 100);
+      
+      // Save quiz result to database
+      await saveQuizResult({
+        score: percentage,
+        questions: totalQuestions,
+        correct: score
+      });
+      
+      // Show success message
+      toast.success(`Quiz completed with score: ${percentage}%`);
+    } catch (error) {
+      toast.error('Failed to save quiz result', { 
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
-    
-    // If no questions were parsed successfully, return the raw content
-    if (questions.length === 0) {
-      return (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Could not parse quiz questions. Raw content:
-          </p>
-          <pre className="whitespace-pre-wrap text-sm">{content}</pre>
-        </div>
-      );
-    }
-    
-    // Calculate score
-    const score = Object.entries(selectedAnswers).reduce((acc, [questionIndex, answer]) => {
-      const question = questions[parseInt(questionIndex)];
-      return question ? acc + (question.correct === answer ? 1 : 0) : acc;
-    }, 0);
-    
-    // Return parsed quiz in a nice format
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <p className="text-sm text-muted-foreground">
-            {questions.length} questions generated
-          </p>
-          {showResults && (
-            <div className="text-right">
-              <p className="font-medium">Score: {score}/{questions.length}</p>
-              <p className="text-sm text-muted-foreground">
-                {Math.round((score / questions.length) * 100)}%
-              </p>
-            </div>
-          )}
-        </div>
-        
-        <div className="space-y-8">
-          {questions.map((q, i) => (
-            <div key={i} className="space-y-3">
-              <p className="font-medium">{i + 1}. {q.question}</p>
-              <div className="grid gap-2">
-                {Object.entries(q.options).map(([key, value]) => (
-                  <div 
-                    key={key}
-                    className={`p-3 rounded-md border cursor-pointer transition-colors ${
-                      selectedAnswers[i] === key 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'hover:bg-muted'
-                    } ${
-                      showResults && key === q.correct 
-                        ? 'border-green-500 bg-green-50/50' 
-                        : showResults && selectedAnswers[i] === key && key !== q.correct 
-                          ? 'border-red-500 bg-red-50/50' 
-                          : ''
-                    }`}
-                    onClick={() => {
-                      if (!showResults) {
-                        setSelectedAnswers(prev => ({
-                          ...prev,
-                          [i]: key
-                        }));
-                      }
-                    }}
-                  >
-                    <div className="flex items-center">
-                      <div className="mr-2 font-medium">{key}.</div>
-                      <div>{value}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="flex justify-end pt-4">
-          {!showResults ? (
-            <Button onClick={() => {
-              setShowResults(true);
-              // Calculate and save score when showing results
-              const quizScore = Object.entries(selectedAnswers).reduce((acc, [questionIndex, answer]) => {
-                const question = questions[parseInt(questionIndex)];
-                return question ? acc + (question.correct === answer ? 1 : 0) : acc;
-              }, 0);
-              
-              // Save the quiz results
-              submitQuiz(quizScore, questions.length);
-            }}>
-              Check Answers
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={() => {
-              setSelectedAnswers({});
-              setShowResults(false);
-            }}>
-              Try Again
-            </Button>
-          )}
-        </div>
-      </div>
-    );
   };
 
   // Function to generate flashcards from pending notes
@@ -503,24 +487,87 @@ export default function StudentFlashcards() {
         }
       }
       
+      // If no flashcards were found with the primary pattern, try alternative formats
+      if (flashcards.length === 0) {
+        // Try various alternative patterns
+        
+        // Pattern for "Question: X Answer: Y" format
+        const questionAnswerPattern = /Question:\s*(.*?)\s*(?:\r?\n|\r)Answer:\s*(.*?)(?=(?:\r?\n|\r)Question:|\s*$)/gs;
+        while ((match = questionAnswerPattern.exec(flashcardsContent)) !== null) {
+          if (match[1] && match[2]) {
+            flashcards.push({
+              question: match[1].trim(),
+              answer: match[2].trim(),
+              mastered: false
+            });
+          }
+        }
+        
+        // If still no matches, try lines that end with a question mark
+        if (flashcards.length === 0) {
+          const lines = flashcardsContent.split(/\n/).map(line => line.trim()).filter(Boolean);
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].endsWith('?') && i + 1 < lines.length) {
+              // Add non-empty question-answer pairs
+              if (lines[i] && lines[i+1]) {
+                flashcards.push({
+                  question: lines[i].trim(),
+                  answer: lines[i+1].trim(),
+                  mastered: false
+                });
+              }
+              i++; // Skip the next line as we used it for the answer
+            }
+          }
+        }
+        
+        // If still no matches, try to parse line by line, alternating question and answer
+        if (flashcards.length === 0) {
+          const lines = flashcardsContent.split(/\n/).map(line => line.trim()).filter(Boolean);
+          for (let i = 0; i < lines.length; i += 2) {
+            if (i + 1 < lines.length) {
+              // Skip lines that are too short or likely to be headers
+              if (lines[i].length > 5 && lines[i+1].length > 5 && 
+                  !lines[i].toLowerCase().includes('question') && 
+                  !lines[i].toLowerCase().includes('answer')) {
+                flashcards.push({
+                  question: lines[i].trim(),
+                  answer: lines[i+1].trim(),
+                  mastered: false
+                });
+              }
+            }
+          }
+        }
+      }
+      
       // Create a new deck with the parsed flashcards
       if (flashcards.length > 0) {
         // Generate deck name from pending file name
         const deckName = pendingFileName || `Deck ${new Date().toLocaleString()}`;
         
-        const newDeck = {
-          id: Date.now().toString(),
+        // Create deck in database
+        const newDeck = await createFlashcardDeck({
           name: deckName,
-          cards: flashcards,
-          createdAt: new Date().toISOString(),
-          lastStudied: null,
-          progress: 0
+          cards: flashcards
+        });
+        
+        // Add deck to local state
+        const formattedDeck = {
+          id: newDeck.id,
+          name: newDeck.name,
+          cards: newDeck.flashcards.map((card: any) => ({
+            id: card.id,
+            question: card.question,
+            answer: card.answer,
+            mastered: card.mastered
+          })),
+          progress: 0,
+          createdAt: newDeck.createdAt,
+          lastStudied: null
         };
         
-        // Add to existing decks
-        const updatedDecks = [...decks, newDeck];
-        localStorage.setItem('flashcardDecks', JSON.stringify(updatedDecks));
-        setDecks(updatedDecks);
+        setDecks([...decks, formattedDeck]);
         
         // Clear the pending notes
         localStorage.removeItem('notesPendingForFlashcards');
@@ -530,7 +577,7 @@ export default function StudentFlashcards() {
         setShowNotesImport(false);
         
         // Select the new deck
-        setSelectedDeckIndex(updatedDecks.length - 1);
+        setSelectedDeckIndex(decks.length);
         
         toast.success('Flashcards created successfully!');
       } else {
@@ -544,17 +591,18 @@ export default function StudentFlashcards() {
     }
   };
 
-  // Cancel importing notes
+  // Function to reset note import dialog
   const cancelImportNotes = () => {
     localStorage.removeItem('notesPendingForFlashcards');
     localStorage.removeItem('notesPendingFileName');
     setPendingNotes(null);
     setPendingFileName(null);
     setShowNotesImport(false);
+    setSelectedQuizText(''); // Also reset the quiz text
   };
 
   // Function to delete a deck
-  const deleteDeck = (index: number) => {
+  const deleteDeck = async (index: number) => {
     if (!decks[index]) return;
     
     // Create confirmation dialog
@@ -567,16 +615,16 @@ export default function StudentFlashcards() {
         duration: 5000,
         action: {
           label: "Delete",
-          onClick: () => {
+          onClick: async () => {
             try {
-              // Remove the deck from the array
+              const deckId = decks[index].id;
+              
+              // Delete the deck from database
+              await deleteFlashcardDeck(deckId);
+              
+              // Remove the deck from state
               const newDecks = [...decks];
               newDecks.splice(index, 1);
-              
-              // Save to localStorage
-              localStorage.setItem('flashcardDecks', JSON.stringify(newDecks));
-              
-              // Update state
               setDecks(newDecks);
               
               // If the deleted deck was selected, select another deck
@@ -607,18 +655,82 @@ export default function StudentFlashcards() {
     );
   };
 
+  // Add a helper function to render key terms properly
+  const renderKeyTerms = (content: string) => {
+    if (!content) return null;
+    
+    try {
+      // Pattern to extract Term and Definition pairs
+      const termPattern = /Term:\s*(.*?)\s*\n\s*Definition:\s*(.*?)(?=\n\s*Term:|$)/gs;
+      let match;
+      const terms: { term: string; definition: string }[] = [];
+      
+      // Extract all terms and definitions
+      while ((match = termPattern.exec(content)) !== null) {
+        const term = match[1]?.trim();
+        const definition = match[2]?.trim();
+        
+        if (term && definition) {
+          terms.push({ term, definition });
+        }
+      }
+      
+      // If no terms were found with the primary pattern, try to parse differently
+      if (terms.length === 0) {
+        // Check if content has bullet points or numbered lists
+        const lines = content.split('\n').map(line => line.trim()).filter(Boolean);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          // If line looks like a term (ends with a colon, is short, etc.)
+          if ((line.endsWith(':') || line.length < 50) && i + 1 < lines.length) {
+            terms.push({
+              term: line.replace(/^[•\-\d.]+\s*/, '').replace(/:$/, ''),
+              definition: lines[i + 1].replace(/^[•\-\d.]+\s*/, '')
+            });
+            i++; // Skip the next line as we used it for the definition
+          }
+        }
+      }
+      
+      // If we found terms, render them
+      if (terms.length > 0) {
+        return (
+          <div className="space-y-4">
+            {terms.map((item, i) => (
+              <div key={i} className="border rounded-lg p-4 bg-card">
+                <p className="font-semibold text-primary">{item.term}</p>
+                <p className="mt-1 text-muted-foreground">{item.definition}</p>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      
+      // Fallback to displaying content as is
+      return (
+        <div className="prose prose-sm">
+          {content.split('\n\n').map((paragraph, i) => (
+            <p key={i}>{paragraph}</p>
+          ))}
+        </div>
+      );
+    } catch (error) {
+      console.error('Error rendering key terms:', error);
+      // Fallback in case of errors
+      return (
+        <div className="prose prose-sm">
+          {content.split('\n\n').map((paragraph, i) => (
+            <p key={i}>{paragraph}</p>
+          ))}
+        </div>
+      );
+    }
+  };
+
   // Don't render until authenticated
   if (!isAuthenticated || userRole !== 'student') {
     return null;
   }
-
-  // Reset quiz state when quizContent changes
-  useEffect(() => {
-    if (quizContent) {
-      setSelectedAnswers({});
-      setShowResults(false);
-    }
-  }, [quizContent]);
 
   return (
     <div className="w-full max-w-full overflow-hidden">
@@ -671,136 +783,136 @@ export default function StudentFlashcards() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
-              <motion.div 
-                className="lg:col-span-3"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card className="overflow-hidden">
-                  <CardContent className="p-3 sm:p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-base sm:text-lg font-medium flex items-center">
-                        <BookOpenText className="mr-2 h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+            <motion.div 
+              className="lg:col-span-3"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="overflow-hidden">
+                <CardContent className="p-3 sm:p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base sm:text-lg font-medium flex items-center">
+                      <BookOpenText className="mr-2 h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         {currentDeck.name}
-                      </h3>
-                      <div className="text-xs sm:text-sm text-muted-foreground">
-                        Card {currentCardIndex + 1} of {flashcards.length}
-                      </div>
+                    </h3>
+                    <div className="text-xs sm:text-sm text-muted-foreground">
+                      Card {currentCardIndex + 1} of {flashcards.length}
                     </div>
-                    
+                  </div>
+                  
                     {flashcards.length > 0 ? (
-                      <div className="relative h-[200px] sm:h-[300px] w-full perspective-1000">
-                        <AnimatePresence initial={false} mode="wait">
-                          <motion.div
-                            key={`card-${currentCardIndex}-${isFlipped ? 'back' : 'front'}`}
-                            initial={{ rotateY: isFlipped ? -90 : 90, opacity: 0 }}
-                            animate={{ rotateY: 0, opacity: 1 }}
-                            exit={{ rotateY: isFlipped ? 90 : -90, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="absolute inset-0 w-full h-full"
-                          >
-                            <div 
-                              onClick={flipCard}
-                              className={`cursor-pointer w-full h-full border rounded-xl flex items-center justify-center p-4 sm:p-8 text-center bg-card transition-shadow hover:shadow-md ${markedCorrect.includes(currentCardIndex) ? 'border-green-500 border-2' : ''}`}
-                            >
-                              <div>
-                                {!isFlipped ? (
+                  <div className="relative h-[200px] sm:h-[300px] w-full perspective-1000">
+                    <AnimatePresence initial={false} mode="wait">
+                      <motion.div
+                        key={`card-${currentCardIndex}-${isFlipped ? 'back' : 'front'}`}
+                        initial={{ rotateY: isFlipped ? -90 : 90, opacity: 0 }}
+                        animate={{ rotateY: 0, opacity: 1 }}
+                        exit={{ rotateY: isFlipped ? 90 : -90, opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="absolute inset-0 w-full h-full"
+                      >
+                        <div 
+                          onClick={flipCard}
+                          className={`cursor-pointer w-full h-full border rounded-xl flex items-center justify-center p-4 sm:p-8 text-center bg-card transition-shadow hover:shadow-md ${markedCorrect.includes(currentCardIndex) ? 'border-green-500 border-2' : ''}`}
+                        >
+                          <div>
+                            {!isFlipped ? (
                                   <div className="text-base sm:text-xl font-medium overflow-auto max-h-[160px] sm:max-h-[240px]">
                                     {flashcards[currentCardIndex]?.question || flashcards[currentCardIndex]?.front}
                                   </div>
-                                ) : (
+                            ) : (
                                   <div className="text-base sm:text-xl overflow-auto max-h-[160px] sm:max-h-[240px]">
                                     {flashcards[currentCardIndex]?.answer || flashcards[currentCardIndex]?.back}
                                   </div>
-                                )}
-                                <div className="mt-2 sm:mt-4 text-xs sm:text-sm text-muted-foreground">
-                                  {isFlipped ? "Click to see question" : "Click to see answer"}
-                                </div>
-                              </div>
+                            )}
+                            <div className="mt-2 sm:mt-4 text-xs sm:text-sm text-muted-foreground">
+                              {isFlipped ? "Click to see question" : "Click to see answer"}
                             </div>
-                          </motion.div>
-                        </AnimatePresence>
-                      </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
                     ) : (
                       <div className="h-[200px] sm:h-[300px] w-full flex items-center justify-center">
                         <p className="text-muted-foreground">No flashcards available</p>
                       </div>
                     )}
-                    
+                  
                     {flashcards.length > 0 && (
-                      <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row items-center gap-3 sm:justify-between">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={prevCard}
-                          disabled={currentCardIndex === 0}
-                          className="w-full sm:w-auto"
-                        >
-                          <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                        </Button>
-                        
-                        <div className="flex space-x-2 sm:space-x-3 w-full sm:w-auto">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={resetDeck}
-                            className="flex-1 sm:flex-none"
-                          >
-                            <RotateCcw className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Reset</span>
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={markCorrect}
-                            className="flex-1 sm:flex-none text-green-600 border-green-600 hover:bg-green-50"
-                          >
-                            <CheckCircle2 className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Correct</span>
-                          </Button>
-                        </div>
-                        
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={nextCard}
-                          disabled={currentCardIndex === flashcards.length - 1}
-                          className="w-full sm:w-auto"
-                        >
-                          Next <ChevronRight className="h-4 w-4 ml-1" />
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-              
-              <motion.div 
-                className="lg:col-span-2"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-              >
-                <Card>
-                  <CardContent className="p-3 sm:p-6">
-                    <h3 className="text-base sm:text-lg font-medium mb-3 sm:mb-4">Study Progress</h3>
+                  <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row items-center gap-3 sm:justify-between">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={prevCard}
+                      disabled={currentCardIndex === 0}
+                      className="w-full sm:w-auto"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    </Button>
                     
-                    <div className="space-y-4 sm:space-y-6">
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <div className="text-xs sm:text-sm font-medium">Current Deck</div>
-                          <div className="text-xs sm:text-sm text-muted-foreground">
-                            {markedCorrect.length} of {flashcards.length} cards
-                          </div>
-                        </div>
-                        <Progress value={(markedCorrect.length / flashcards.length) * 100} className="h-2" />
-                      </div>
+                    <div className="flex space-x-2 sm:space-x-3 w-full sm:w-auto">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={resetDeck}
+                        className="flex-1 sm:flex-none"
+                      >
+                        <RotateCcw className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Reset</span>
+                      </Button>
                       
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={markCorrect}
+                        className="flex-1 sm:flex-none text-green-600 border-green-600 hover:bg-green-50"
+                      >
+                        <CheckCircle2 className="h-4 w-4 sm:mr-1" /> <span className="hidden sm:inline">Correct</span>
+                      </Button>
+                    </div>
+                    
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={nextCard}
+                      disabled={currentCardIndex === flashcards.length - 1}
+                      className="w-full sm:w-auto"
+                    >
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                    )}
+                </CardContent>
+              </Card>
+            </motion.div>
+            
+            <motion.div 
+              className="lg:col-span-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
+              <Card>
+                <CardContent className="p-3 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-medium mb-3 sm:mb-4">Study Progress</h3>
+                  
+                  <div className="space-y-4 sm:space-y-6">
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="text-xs sm:text-sm font-medium">Current Deck</div>
+                        <div className="text-xs sm:text-sm text-muted-foreground">
+                          {markedCorrect.length} of {flashcards.length} cards
+                        </div>
+                      </div>
+                      <Progress value={(markedCorrect.length / flashcards.length) * 100} className="h-2" />
+                    </div>
+                    
                       {decks.length > 1 && (
-                        <div className="pt-2 sm:pt-4">
+                    <div className="pt-2 sm:pt-4">
                           <h4 className="text-xs sm:text-sm font-medium mb-2 sm:mb-3">Your Flashcard Decks</h4>
-                          <div className="space-y-2 sm:space-y-3">
+                      <div className="space-y-2 sm:space-y-3">
                             {decks.map((deck, i) => (
                               <div 
                                 key={deck.id} 
@@ -811,7 +923,7 @@ export default function StudentFlashcards() {
                                     className="flex-1"
                                     onClick={() => changeDeck(i)}
                                   >
-                                    <div className="flex justify-between text-xs sm:text-sm">
+                            <div className="flex justify-between text-xs sm:text-sm">
                                       <span className={selectedDeckIndex === i ? 'font-medium' : ''}>{deck.name}</span>
                                       <span className="text-muted-foreground">{deck.progress || 0}%</span>
                                     </div>
@@ -832,14 +944,14 @@ export default function StudentFlashcards() {
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </button>
-                                </div>
-                              </div>
-                            ))}
+                            </div>
                           </div>
-                        </div>
+                        ))}
+                      </div>
+                    </div>
                       )}
-                      
-                      <div className="pt-2 sm:pt-4">
+                    
+                    <div className="pt-2 sm:pt-4">
                         <Button 
                           onClick={() => {
                             saveProgress();
@@ -848,19 +960,19 @@ export default function StudentFlashcards() {
                           className="w-full"
                         >
                           Create New Flashcards
-                        </Button>
-                      </div>
+                          </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
           )}
         </TabsContent>
         
         <TabsContent value="quizzes" className="mt-0">
-          <Card>
-            <CardContent className="p-3 sm:p-6">
+              <Card>
+                <CardContent className="p-3 sm:p-6">
               <div className="space-y-4">
                 <h3 className="text-base sm:text-lg font-medium">Generate Quiz</h3>
                 {pendingNotes && !quizContent && (
@@ -876,14 +988,14 @@ export default function StudentFlashcards() {
                 <p className="text-sm text-muted-foreground">
                   Enter a text to generate a quiz from or paste content from your notes.
                 </p>
-                
+            
                 <textarea
                   className="w-full min-h-[200px] p-3 border rounded-md"
                   placeholder="Paste your text here..."
                   value={selectedQuizText}
                   onChange={(e) => setSelectedQuizText(e.target.value)}
                 ></textarea>
-                
+                  
                 <Button 
                   onClick={generateQuiz} 
                   disabled={isGeneratingQuiz || !selectedQuizText}
@@ -896,16 +1008,21 @@ export default function StudentFlashcards() {
                     </>
                   ) : "Generate Quiz"}
                 </Button>
-              </div>
-              
+                    </div>
+                    
               {quizContent && (
                 <div className="mt-8 border-t pt-6">
                   <h3 className="text-base sm:text-lg font-medium mb-4">Your Quiz</h3>
-                  {renderQuiz(quizContent)}
+                  <QuizComponent 
+                    content={quizContent} 
+                    onComplete={(score, total) => {
+                      submitQuiz(score, total);
+                    }}
+                  />
                 </div>
               )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
         </TabsContent>
       </Tabs>
     </div>
