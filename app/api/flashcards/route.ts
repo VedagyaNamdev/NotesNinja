@@ -62,9 +62,40 @@ export async function POST(request: NextRequest) {
     const data = await request.json();
     
     // Validate deck data
-    if (!data.name || !data.cards || !Array.isArray(data.cards) || data.cards.length === 0) {
+    if (!data.name) {
       return NextResponse.json(
-        { error: 'Name and at least one card are required' },
+        { error: 'Deck name is required' },
+        { status: 400 }
+      );
+    }
+    
+    if (!data.cards || !Array.isArray(data.cards)) {
+      return NextResponse.json(
+        { error: 'Cards must be provided as an array' },
+        { status: 400 }
+      );
+    }
+    
+    if (data.cards.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one card is required' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate individual cards
+    const invalidCards = data.cards.filter((card: any) => 
+      !card.question || !card.answer ||
+      typeof card.question !== 'string' || 
+      typeof card.answer !== 'string'
+    );
+    
+    if (invalidCards.length > 0) {
+      return NextResponse.json(
+        { 
+          error: 'All cards must have both question and answer as strings',
+          invalidCount: invalidCards.length 
+        },
         { status: 400 }
       );
     }

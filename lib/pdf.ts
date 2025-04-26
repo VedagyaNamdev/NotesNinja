@@ -13,7 +13,7 @@ let pdfJsLib: any = null;
 async function loadPdfJs(): Promise<void> {
   if (typeof window === 'undefined' || pdfJsLoaded) return;
 
-  try {
+    try {
     // Only load in browser environment
     const version = '3.11.174'; // A stable version that works well in browsers
     
@@ -35,7 +35,7 @@ async function loadPdfJs(): Promise<void> {
     pdfJsLib = window.pdfjsLib;
     pdfJsLoaded = true;
     console.log("PDF.js loaded successfully from CDN");
-  } catch (error) {
+    } catch (error) {
     console.error("Failed to load PDF.js from CDN:", error);
     throw new Error("Failed to initialize PDF processing");
   }
@@ -56,25 +56,25 @@ export async function extractTextFromPdf(pdfFile: File): Promise<string> {
     }
     
     // Convert file to ArrayBuffer
-    const arrayBuffer = await fileToArrayBuffer(pdfFile);
+      const arrayBuffer = await fileToArrayBuffer(pdfFile);
     
     // Load the PDF
     const loadingTask = pdfJsLib.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
-    
-    let fullText = '';
-    
-    // Extract text from each page
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
+      
+      let fullText = '';
+      
+      // Extract text from each page
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
       const pageText = textContent.items
         .map((item: any) => item.str)
         .join(' ');
-      fullText += pageText + '\n\n';
-    }
-    
-    return fullText.trim();
+        fullText += pageText + '\n\n';
+      }
+      
+      return fullText.trim();
   } catch (error) {
     console.error('PDF processing error:', error);
     throw new Error('Failed to extract text from the PDF');

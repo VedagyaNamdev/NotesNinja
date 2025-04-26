@@ -25,24 +25,43 @@ model User {
   notes         Note[]
   flashcardDecks FlashcardDeck[]
   quizResults   QuizResult[]
+  attachments   Attachment[]
 
   @@map("users")
 }
 
 // Note model
 model Note {
-  id        String   @id @default(uuid())
-  title     String
-  content   String   @db.Text
-  summary   String?  @db.Text
-  keyTerms  String?  @db.Text @map("key_terms")
-  bullets   String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String      @id @default(uuid())
+  title       String
+  content     String      @db.Text
+  summary     String?     @db.Text
+  keyTerms    String?     @db.Text @map("key_terms")
+  bullets     String?     @db.Text
+  favorite    Boolean     @default(false)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  userId      String      @map("user_id")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachment  Attachment? @relation(fields: [attachmentId], references: [id])
+  attachmentId String?    @map("attachment_id") @unique
 
   @@map("notes")
+}
+
+// Attachment model for storing documents and files
+model Attachment {
+  id          String    @id @default(uuid())
+  filename    String
+  fileType    String    @map("file_type")
+  fileSize    Int       @map("file_size")
+  data        Bytes     // Binary data storage
+  createdAt   DateTime  @default(now()) @map("created_at")
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note        Note?
+
+  @@map("attachments")
 }
 
 // Flashcard Deck model

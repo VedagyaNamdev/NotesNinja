@@ -1,26 +1,59 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from '@/components/shared/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
-import { Search, Filter, FileText, BookText, Clock, Calendar, Download } from 'lucide-react';
-import { useAuth } from '@/hooks/use-auth';
+import { Search, Clock } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { fetchNotes } from '@/lib/services/notes-service';
+import { Note, NoteWithMetadata } from '@/types/note';
+import { useToast } from '@/hooks/use-toast';
+import NoteItem from '@/components/notes/NoteItem';
+import { CreateNoteDialog } from '@/components/notes/CreateNoteDialog';
+import { ImportNotesDialog } from '@/components/notes/ImportNotesDialog';
+import LoadingScreen from '@/components/LoadingScreen';
+import Link from 'next/link';
+
+// Function to extract tags from the content
+const extractTags = (content: string): string[] => {
+  const hashtagRegex = /#([a-zA-Z0-9_]+)/g;
+  const matches = content.match(hashtagRegex);
+  
+  if (!matches) return [];
+  
+  return matches.map(match => match.substring(1)); // Remove the # character
+};
+
+// Convert raw notes to notes with metadata
+const processNotes = (notes: Note[]): NoteWithMetadata[] => {
+  return notes.map(note => ({
+    ...note,
+    tags: extractTags(note.content),
+  }));
+};
 
 const StudentNotes = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [notes, setNotes] = useState<NoteWithMetadata[]>([]);
+  const [filteredNotes, setFilteredNotes] = useState<NoteWithMetadata[]>([]);
+  const [activeTab, setActiveTab] = useState('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  
+  const { toast } = useToast();
   
   // Authentication check
   const { isAuthenticated, userRole } = useAuth();
   const router = useRouter();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isAuthenticated) {
       router.push('/auth');
     } else if (userRole !== 'student') {
@@ -28,73 +61,115 @@ const StudentNotes = () => {
     }
   }, [isAuthenticated, userRole, router]);
 
+  // Fetch notes from API
+  useEffect(() => {
+    const loadNotes = async () => {
+      if (isAuthenticated && userRole === 'student') {
+        setIsLoading(true);
+        try {
+          const response = await fetchNotes();
+          if (response.error) {
+            toast({
+              title: "Error",
+              description: "Failed to load notes: " + response.error,
+              variant: "destructive"
+            });
+            setNotes([]);
+          } else {
+            const processedNotes = processNotes(response.data);
+            setNotes(processedNotes);
+            setFilteredNotes(processedNotes);
+            
+            // Set last sync time
+            setLastSyncTime(new Date().toLocaleTimeString());
+            
+            // Log warnings but don't show toast messages to users
+            if (response._warning) {
+              console.warn('Notes fetched with limitations:', response._warning);
+            } 
+            else if (response._sessionOnly) {
+              console.warn('Notes are in session-only mode - not saved to database');
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching notes:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load notes. Please try again later.",
+            variant: "destructive"
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    loadNotes();
+  }, [isAuthenticated, userRole, toast]);
+
+  // Filter notes based on search query and active tab
+  useEffect(() => {
+    if (notes.length === 0) {
+      setFilteredNotes([]);
+      return;
+    }
+    
+    let filtered = notes;
+    
+    // Apply search filter if query exists
+    if (searchQuery) {
+      filtered = filtered.filter(note => 
+        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (note.tags && note.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
+      );
+    }
+    
+    // Apply tab filter
+    if (activeTab !== 'all') {
+      if (activeTab === 'recent') {
+        // Sort by date and take the 5 most recent
+        filtered = [...filtered].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ).slice(0, 5);
+      } else if (activeTab === 'favorites') {
+        // Filter notes with favorite=true
+        filtered = filtered.filter(note => note.favorite);
+      }
+    }
+    
+    setFilteredNotes(filtered);
+  }, [notes, searchQuery, activeTab]);
+
+  // Handle note creation
+  const handleNoteCreated = (newNote: Note) => {
+    const processedNote = processNotes([newNote])[0];
+    setNotes(prevNotes => [processedNote, ...prevNotes]);
+    setLastSyncTime(new Date().toLocaleTimeString());
+  };
+
+  // Handle note deletion
+  const handleNoteDeleted = (deletedNoteId: string) => {
+    setNotes(prevNotes => prevNotes.filter(note => note.id !== deletedNoteId));
+    setLastSyncTime(new Date().toLocaleTimeString());
+  };
+
+  // Handle favorite toggle
+  const handleFavoriteToggle = (updatedNote: NoteWithMetadata) => {
+    setNotes(prevNotes => 
+      prevNotes.map(note => 
+        note.id === updatedNote.id 
+          ? { ...note, favorite: updatedNote.favorite } 
+          : note
+      )
+    );
+    setLastSyncTime(new Date().toLocaleTimeString());
+  };
+
   // Don't render until authenticated
   if (!isAuthenticated || userRole !== 'student') {
     return null;
   }
-
-  // Sample notes data
-  const notesData = [
-    {
-      id: 1,
-      title: 'Physics: Laws of Motion',
-      preview: 'Newton\'s First Law: An object at rest stays at rest, and an object in motion stays in motion unless acted upon by an external force.',
-      date: 'Apr 16, 2025',
-      tags: ['Physics', 'Motion', 'Forces'],
-      type: 'text',
-    },
-    {
-      id: 2,
-      title: 'Biology: Cell Structure',
-      preview: 'Cells are the basic building blocks of all living organisms. The cell structure consists of the cell membrane, cytoplasm, nucleus, and organelles.',
-      date: 'Apr 12, 2025',
-      tags: ['Biology', 'Cells'],
-      type: 'image',
-    },
-    {
-      id: 3,
-      title: 'Chemistry: Periodic Table',
-      preview: 'The periodic table is organized based on atomic number. Elements in the same group have similar chemical properties.',
-      date: 'Apr 8, 2025',
-      tags: ['Chemistry', 'Elements'],
-      type: 'pdf',
-    },
-    {
-      id: 4,
-      title: 'Math: Calculus Basics',
-      preview: 'Derivatives measure the rate of change of a function with respect to a variable. The power rule states: d/dx(x^n) = n*x^(n-1).',
-      date: 'Apr 5, 2025',
-      tags: ['Math', 'Calculus'],
-      type: 'text',
-    },
-    {
-      id: 5,
-      title: 'History: World War II',
-      preview: 'World War II was a global conflict that lasted from 1939 to 1945. It involved many of the world\'s nations organized into two opposing military alliances.',
-      date: 'Mar 28, 2025',
-      tags: ['History', 'WWII'],
-      type: 'pdf',
-    },
-  ];
-
-  const filteredNotes = notesData.filter(note => 
-    note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    note.preview.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    note.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'text':
-        return <FileText className="h-5 w-5" />;
-      case 'image':
-        return <BookText className="h-5 w-5" />;
-      case 'pdf':
-        return <FileText className="h-5 w-5" />;
-      default:
-        return <FileText className="h-5 w-5" />;
-    }
-  };
 
   return (
     <>
@@ -103,34 +178,28 @@ const StudentNotes = () => {
         description="Search and browse through all your uploaded notes."
       />
       
+      {isLoading ? (
+        <LoadingScreen show={true} />
+      ) : (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search notes by title, content, or tags"
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <Button variant="outline" className="sm:w-auto">
-            <Filter className="h-4 w-4 mr-2" />
-            Filters
-          </Button>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search notes by title, content, or tags"
+            className="pl-9"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
         
-        <Tabs defaultValue="all">
+        <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="all">All Notes</TabsTrigger>
             <TabsTrigger value="recent">Recent</TabsTrigger>
             <TabsTrigger value="favorites">Favorites</TabsTrigger>
-            <TabsTrigger value="text">Text</TabsTrigger>
-            <TabsTrigger value="images">Images</TabsTrigger>
-            <TabsTrigger value="pdfs">PDFs</TabsTrigger>
           </TabsList>
           
-          <div className="mt-4">
+          <TabsContent value={activeTab} className="mt-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -139,55 +208,13 @@ const StudentNotes = () => {
             >
               {filteredNotes.length > 0 ? (
                 filteredNotes.map((note, index) => (
-                  <motion.div
-                    key={note.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Card className="hover-scale">
-                      <CardContent className="p-0">
-                        <div className="p-4 sm:p-6">
-                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                            <div className="flex gap-4 items-start">
-                              <div className={`rounded-full p-3 ${
-                                note.type === 'text' ? 'bg-blue-100 text-blue-600' :
-                                note.type === 'image' ? 'bg-green-100 text-green-600' :
-                                'bg-orange-100 text-orange-600'
-                              }`}>
-                                {getTypeIcon(note.type)}
-                              </div>
-                              <div className="space-y-2">
-                                <h3 className="font-medium text-lg">{note.title}</h3>
-                                <p className="text-muted-foreground">{note.preview}</p>
-                                <div className="flex flex-wrap gap-2 pt-1">
-                                  {note.tags.map((tag, i) => (
-                                    <Badge key={i} variant="outline" className="bg-muted/40">
-                                      {tag}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-2 mt-3 sm:mt-0">
-                              <div className="text-sm text-muted-foreground flex items-center">
-                                <Calendar className="h-3.5 w-3.5 mr-1" />
-                                {note.date}
-                              </div>
-                              <div className="flex gap-2">
-                                <Button size="sm" variant="outline" className="h-8 px-2">
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                <Button size="sm" variant="default" className="h-8">
-                                  View
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
+                    <NoteItem 
+                      key={note.id}
+                      note={note} 
+                      index={index} 
+                      onDelete={handleNoteDeleted}
+                      onFavoriteToggle={handleFavoriteToggle}
+                    />
                 ))
               ) : (
                 <div className="text-center py-10">
@@ -196,12 +223,16 @@ const StudentNotes = () => {
                   </div>
                   <h3 className="font-medium text-lg">No notes found</h3>
                   <p className="text-muted-foreground mt-1">
-                    Try adjusting your search or filters
+                      {notes.length === 0 
+                        ? "You haven't created any notes yet. Create your first note to get started."
+                        : activeTab === 'favorites'
+                          ? "You don't have any favorite notes yet. Click the star icon on a note to add it to favorites."
+                          : "Try adjusting your search or filters"}
                   </p>
                 </div>
               )}
             </motion.div>
-          </div>
+          </TabsContent>
         </Tabs>
         
         <Separator className="my-6" />
@@ -209,14 +240,15 @@ const StudentNotes = () => {
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-            Last synchronized: Today at 2:45 PM
+              Last synchronized: {lastSyncTime ? `Today at ${lastSyncTime}` : 'Never'}
           </div>
           <div className="flex gap-3">
-            <Button variant="outline">Import Notes</Button>
-            <Button>Create New Note</Button>
+              <ImportNotesDialog onNoteImported={handleNoteCreated} />
+              <CreateNoteDialog onNoteCreated={handleNoteCreated} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 };

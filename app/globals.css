@@ -107,6 +107,19 @@
   }
 }
 
+/* Custom Toast Styling */
+[data-sonner-toast] [data-description] {
+  color: black !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+}
+
+.dark [data-sonner-toast] [data-description] {
+  color: white !important;
+}
+
+/* End Custom Toast Styling */
+
 .hover-scale {
   @apply transition-transform duration-200 hover:scale-105;
 }

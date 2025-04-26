@@ -43,6 +43,20 @@ export const authOptions: NextAuthOptions = {
       
       return session;
     },
+    async redirect({ url, baseUrl }) {
+      // Handle redirect after sign in
+      // If the URL contains a role parameter, use it for redirection
+      try {
+        const urlObj = new URL(url);
+        const role = urlObj.searchParams.get('role') || 'student';
+        
+        // Always redirect to dashboard directly with noredirect parameter
+        return `${baseUrl}/${role}/dashboard?noredirect=true`;
+      } catch (error) {
+        // If URL parsing fails, just go to student dashboard
+        return `${baseUrl}/student/dashboard?noredirect=true`;
+      }
+    }
   },
   pages: {
     signIn: '/auth/signin',

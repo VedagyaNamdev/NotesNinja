@@ -35,11 +35,11 @@ export default function AuthPage() {
       if (userRole) {
         // User has a role, redirect to the dashboard
         console.log(`User authenticated with role ${userRole}, redirecting to dashboard`);
-        router.push(`/${userRole}/dashboard`);
+        router.push(`/${userRole}/dashboard?noredirect=true`);
       } else {
         // User is authenticated but doesn't have a role
         console.log('User authenticated without role, redirecting to dashboard-redirect');
-        router.push('/dashboard-redirect');
+        router.push('/dashboard-redirect?noredirect=true');
       }
     }
   }, [isAuthenticated, userRole, router]);
@@ -65,8 +65,9 @@ export default function AuthPage() {
 
   // Handle provider selection
   const handleProviderSelect = (provider: 'google' | 'github') => {
-    // Use the login function from useAuth to handle authentication
-    const callbackUrl = `/dashboard-redirect?role=${selectedRole}`;
+    // Set direct dashboard redirect with role parameter
+    const role = selectedRole || 'student';
+    const callbackUrl = `/${role}/dashboard?role=${role}&noredirect=true`;
     signIn(provider, { callbackUrl, redirect: true });
   };
 

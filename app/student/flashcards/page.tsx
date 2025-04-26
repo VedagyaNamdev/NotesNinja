@@ -503,49 +503,25 @@ export default function StudentFlashcards() {
           }
         }
         
-        // If still no matches, try lines that end with a question mark
-        if (flashcards.length === 0) {
-          const lines = flashcardsContent.split(/\n/).map(line => line.trim()).filter(Boolean);
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].endsWith('?') && i + 1 < lines.length) {
-              // Add non-empty question-answer pairs
-              if (lines[i] && lines[i+1]) {
+        // Pattern for "Term: X Definition: Y" format
+        const termDefPattern = /Term:\s*(.*?)\s*(?:\r?\n|\r)Definition:\s*(.*?)(?=(?:\r?\n|\r)Term:|\s*$)/gs;
+        while ((match = termDefPattern.exec(flashcardsContent)) !== null) {
+          if (match[1] && match[2]) {
                 flashcards.push({
-                  question: lines[i].trim(),
-                  answer: lines[i+1].trim(),
+              question: match[1].trim(),
+              answer: match[2].trim(),
                   mastered: false
                 });
               }
-              i++; // Skip the next line as we used it for the answer
-            }
           }
         }
         
-        // If still no matches, try to parse line by line, alternating question and answer
-        if (flashcards.length === 0) {
-          const lines = flashcardsContent.split(/\n/).map(line => line.trim()).filter(Boolean);
-          for (let i = 0; i < lines.length; i += 2) {
-            if (i + 1 < lines.length) {
-              // Skip lines that are too short or likely to be headers
-              if (lines[i].length > 5 && lines[i+1].length > 5 && 
-                  !lines[i].toLowerCase().includes('question') && 
-                  !lines[i].toLowerCase().includes('answer')) {
-                flashcards.push({
-                  question: lines[i].trim(),
-                  answer: lines[i+1].trim(),
-                  mastered: false
-                });
-              }
-            }
-          }
-        }
-      }
-      
-      // Create a new deck with the parsed flashcards
+      // Validate that we have cards before creating a deck
       if (flashcards.length > 0) {
         // Generate deck name from pending file name
         const deckName = pendingFileName || `Deck ${new Date().toLocaleString()}`;
         
+        try {
         // Create deck in database
         const newDeck = await createFlashcardDeck({
           name: deckName,
@@ -580,8 +556,15 @@ export default function StudentFlashcards() {
         setSelectedDeckIndex(decks.length);
         
         toast.success('Flashcards created successfully!');
+        } catch (apiError) {
+          console.error('Error creating flashcard deck:', apiError);
+          toast.error('Failed to create flashcard deck');
+        }
       } else {
-        toast.error('Could not extract flashcards from the notes');
+        toast.error('Could not extract flashcards from the notes', {
+          description: 'Please try a different document or create flashcards manually'
+        });
+        // Don't close the import dialog so the user can try again
       }
     } catch (error) {
       console.error('Error generating flashcards:', error);

@@ -70,27 +70,39 @@ export async function createFlashcardDeck(deck: {
     mastered?: boolean;
   }[];
 }) {
-  // Validate input
+  // Validate input - stricter validation
   if (!deck.name) {
     throw new Error('Deck name is required');
   }
   
-  if (!deck.cards || !Array.isArray(deck.cards) || deck.cards.length === 0) {
-    throw new Error('At least one card is required');
+  if (!deck.cards || !Array.isArray(deck.cards)) {
+    throw new Error('Cards array is required');
   }
   
-  // Ensure all cards have question and answer
-  const invalidCards = deck.cards.filter(card => !card.question || !card.answer);
-  if (invalidCards.length > 0) {
-    throw new Error('All cards must have both question and answer');
+  // Filter out invalid cards
+  const validCards = deck.cards.filter(card => card.question && card.answer);
+  
+  // Make sure there's at least one valid card
+  if (validCards.length === 0) {
+    throw new Error('At least one valid card with question and answer is required');
   }
+  
+  // Use only valid cards going forward
+  const cardsToCreate = validCards.map(card => ({
+    question: card.question,
+    answer: card.answer,
+    mastered: card.mastered || false
+  }));
 
   const response = await fetch('/api/flashcards', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(deck),
+    body: JSON.stringify({
+      name: deck.name,
+      cards: cardsToCreate
+    }),
   });
   
   if (!response.ok) {

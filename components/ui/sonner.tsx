@@ -14,7 +14,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         classNames: {
           toast: "bg-white dark:bg-gray-900 border border-border shadow-md",
           title: "font-semibold text-foreground",
-          description: "text-muted-foreground",
+          description: "text-gray-900 dark:text-white font-semibold text-sm",
           actionButton: "bg-primary text-primary-foreground",
           cancelButton: "bg-muted text-foreground",
         },

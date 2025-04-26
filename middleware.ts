@@ -6,17 +6,13 @@ export async function middleware(request: NextRequest) {
   // Get the pathname
   const path = request.nextUrl.pathname;
   
-  // Special case: Handle /undefined/dashboard - redirect to auth to select a role
-  if (path === '/undefined/dashboard' || path.startsWith('/undefined/')) {
-    return NextResponse.redirect(new URL('/auth', request.url));
+  // Don't redirect if the URL has a 'noredirect' parameter to break redirect loops
+  if (request.nextUrl.searchParams.has('noredirect')) {
+    return NextResponse.next();
   }
 
-  // Check what type of path we're dealing with
-  const isAuthPath = path === '/auth';
-  const isApplyRolePath = path === '/auth/apply-role';
-  const isDashboardRedirectPath = path === '/dashboard-redirect';
+  // Check if this is an API path
   const isApiPath = path.startsWith('/api/');
-  const isRootPath = path === '/';
   
   // Don't run middleware for API routes
   if (isApiPath) {
@@ -29,49 +25,58 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Check URL params
-  const hasTimestamp = request.nextUrl.searchParams.has('ts');
-  const urlRole = request.nextUrl.searchParams.get('role');
-  
-  // Allow all requests with a timestamp (fresh redirects)
-  if (hasTimestamp) {
-    return NextResponse.next();
-  }
+  // Public paths that don't require authentication or user role
+  const publicPaths = ['/auth', '/auth/signin', '/auth/error', '/auth/apply-role'];
+  const isPublicPath = publicPaths.some(publicPath => path === publicPath);
 
   // Handle root path
-  if (isRootPath) {
-    if (token && token.role) {
-      return NextResponse.redirect(new URL(`/${token.role}/dashboard`, request.url));
+  if (path === '/') {
+    if (token) {
+      // User has a valid token, redirect to dashboard
+      const role = token.role || 'student';
+      return NextResponse.redirect(new URL(`/${role}/dashboard?noredirect=true`, request.url));
     }
+    // No token, redirect to auth
     return NextResponse.redirect(new URL('/auth', request.url));
   }
   
-  // Allow access to auth pages
-  if (isAuthPath || isApplyRolePath || isDashboardRedirectPath) {
-    // If authenticated with role on auth page, redirect to dashboard
-    if (isAuthPath && token && token.role) {
-      return NextResponse.redirect(new URL(`/${token.role}/dashboard`, request.url));
+  // If user is on an auth page but already authenticated
+  if (isPublicPath && token) {
+    const role = token.role || 'student';
+    return NextResponse.redirect(new URL(`/${role}/dashboard?noredirect=true`, request.url));
     }
+  
+  // Allow access to public pages
+  if (isPublicPath) {
     return NextResponse.next();
   }
   
-  // Protect routes - require authentication
+  // Redirect unauthenticated users to auth page
   if (!token) {
     return NextResponse.redirect(new URL('/auth', request.url));
   }
   
-  // Handle missing role for role-specific paths
-  if (!token.role && (path.startsWith('/student/') || path.startsWith('/teacher/'))) {
-    return NextResponse.redirect(new URL('/auth', request.url));
+  // From this point, user is authenticated
+  
+  // Special case: Handle /undefined/dashboard - redirect to a real dashboard
+  if (path === '/undefined/dashboard' || path.startsWith('/undefined/')) {
+    const role = token.role || 'student';
+    return NextResponse.redirect(new URL(`/${role}/dashboard?noredirect=true`, request.url));
   }
   
-  // Handle role mismatch
-  if (token.role === 'student' && path.startsWith('/teacher/')) {
-    return NextResponse.redirect(new URL('/student/dashboard', request.url));
+  // Get path role (student or teacher)
+  const pathRole = path.startsWith('/student/') ? 'student' : 
+                   path.startsWith('/teacher/') ? 'teacher' : null;
+                   
+  // If user has no role but is on a role-specific page
+  if (!token.role && pathRole) {
+    // Use the path to assign a role for this session
+    return NextResponse.next();
   }
   
-  if (token.role === 'teacher' && path.startsWith('/student/')) {
-    return NextResponse.redirect(new URL('/teacher/dashboard', request.url));
+  // If user has a role but is on the wrong role's path
+  if (token.role && pathRole && token.role !== pathRole) {
+    return NextResponse.redirect(new URL(`/${token.role}/dashboard?noredirect=true`, request.url));
   }
 
   // Allow access to all other routes

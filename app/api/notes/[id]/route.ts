@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { deleteNote } from '@/lib/db-utils';
 
 export async function GET(
   req: NextRequest,
@@ -35,7 +36,8 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ note });
+    // Return note directly, not nested in an object
+    return NextResponse.json(note);
   } catch (error) {
     console.error('Error fetching note:', error);
     return NextResponse.json(
@@ -121,21 +123,25 @@ export async function DELETE(
 
     const noteId = params.id;
     
-    // Delete the note
-    try {
-      await db.note.delete({
-        where: { 
-          id: noteId,
-          userId: session.user.id
-        }
-      });
-      return NextResponse.json({ success: true });
-    } catch (err) {
+    if (!noteId) {
       return NextResponse.json(
-        { error: 'Note not found or not authorized to delete' },
+        { error: 'Note ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Delete the note
+    const result = await deleteNote(noteId, session.user.id);
+    
+    // Check if deletion was successful
+    if (result.count === 0) {
+      return NextResponse.json(
+        { error: 'Note not found or you do not have permission to delete it' },
         { status: 404 }
       );
     }
+    
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error deleting note:', error);
     return NextResponse.json(
