@@ -141,7 +141,16 @@ export async function DELETE(
       );
     }
     
-    return NextResponse.json({ success: true });
+    // Return with cache prevention headers
+    return NextResponse.json(
+      { success: true },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          'Content-Type': 'application/json'
+        }
+      }
+    );
   } catch (error: any) {
     console.error('Error deleting note:', error);
     return NextResponse.json(

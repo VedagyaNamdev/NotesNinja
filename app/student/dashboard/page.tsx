@@ -14,9 +14,9 @@ import { Button } from '@/components/ui/button';
 import DataMigrationDialog from '@/components/DataMigrationDialog';
 import { 
   fetchFlashcardDecks, 
-  fetchQuizResults, 
-  fetchNotes
+  fetchQuizResults
 } from '@/lib/data-service';
+import { useNotesCount } from '@/hooks/useNotesCount';
 import { toast } from 'sonner';
 
 export default function StudentDashboard() {
@@ -40,11 +40,8 @@ export default function StudentDashboard() {
     latestScore: 0
   });
   
-  // State for notes statistics
-  const [notesStats, setNotesStats] = useState({
-    total: 0,
-    newThisWeek: 0
-  });
+  // Get notes count from hook instead of state
+  const { count: totalNotes, newThisWeek: newNotesThisWeek, loading: notesLoading } = useNotesCount();
   
   // State for upcoming reviews
   const [upcomingReviews, setUpcomingReviews] = useState<any[]>([]);
@@ -66,8 +63,8 @@ export default function StudentDashboard() {
     setIsLoading(true);
     
     try {
-      // Load data from database
-      const [decksData, quizData, notesData] = await Promise.all([
+      // Load data from database - no need to fetch notes now, we're using the hook
+      const [decksData, quizData] = await Promise.all([
         fetchFlashcardDecks().catch(err => {
           console.error('Error fetching flashcard decks:', err);
           return { decks: [] }; // Return empty decks on error
@@ -75,10 +72,6 @@ export default function StudentDashboard() {
         fetchQuizResults().catch(err => {
           console.error('Error fetching quiz results:', err);
           return { results: [] }; // Return empty results on error
-        }),
-        fetchNotes().catch(err => {
-          console.error('Error fetching notes:', err);
-          return []; // Return empty notes on error
         })
       ]);
       
@@ -138,17 +131,6 @@ export default function StudentDashboard() {
         decks
       });
       
-      // Process notes stats
-      const notes = Array.isArray(notesData) ? notesData : [];
-      const newThisWeek = notes.filter((note: any) => 
-        note.date && new Date(note.date) > oneWeekAgo
-      ).length;
-      
-      setNotesStats({
-        total: notes.length,
-        newThisWeek
-      });
-      
       // Process quiz stats
       let completedThisWeek = 0;
       let latestScore = 0;
@@ -173,107 +155,29 @@ export default function StudentDashboard() {
         latestScore
       });
       
-      // Generate upcoming reviews based on least-reviewed decks
-      const upcoming = [...decks]
-        .sort((a, b) => {
-          // Sort by: never studied first, then by oldest study date
-          if (!a.lastStudied && !b.lastStudied) return 0;
-          if (!a.lastStudied) return -1;
-          if (!b.lastStudied) return 1;
-          return new Date(a.lastStudied).getTime() - new Date(b.lastStudied).getTime();
-        })
-        .slice(0, 3) // Take top 3
-        .map(deck => {
-          // Generate a recommended date based on current progress
-          const progress = deck.progress || 0;
-          let reviewDate = 'Today';
-          let reviewTime = '';
-          
-          if (!deck.lastStudied) {
-            reviewTime = 'Not studied yet';
-          } else {
-            const now = new Date();
-            const hours = now.getHours();
-            reviewTime = `${hours > 12 ? (hours - 12) : hours}:00 ${hours >= 12 ? 'PM' : 'AM'}`;
-            
-            if (progress > 80) {
-              // Well known - recommend in a week
-              const nextWeek = new Date();
-              nextWeek.setDate(nextWeek.getDate() + 7);
-              reviewDate = nextWeek.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            } else if (progress > 50) {
-              // Medium known - recommend in 3 days
-              const nextDays = new Date();
-              nextDays.setDate(nextDays.getDate() + 3);
-              reviewDate = nextDays.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            } else if (progress > 20) {
-              // Just started - recommend tomorrow
-              reviewDate = 'Tomorrow';
-            }
-          }
-          
-          return {
-            title: deck.name,
-            date: reviewDate,
-            time: reviewTime,
-            id: deck.id
-          };
-        });
-      
-      setUpcomingReviews(upcoming);
-      
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       toast.error('Failed to load dashboard data');
-      
-      // Try to load from localStorage as fallback
-      loadFromLocalStorage();
     } finally {
       setIsLoading(false);
     }
   };
   
-  // Legacy function to load data from localStorage if database fails
-  const loadFromLocalStorage = () => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      // Offer migration if localStorage has data
-      const decks = JSON.parse(localStorage.getItem('flashcardDecks') || '[]');
-      const quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]');
-      
-      if (decks.length > 0 || quizResults.length > 0) {
-        toast.info('Using local data', {
-          description: 'We found data on your device',
-          action: {
-            label: 'Migrate to Account',
-            onClick: () => setDataMigrated(false) // This will trigger the migration dialog
-          }
-        });
-      }
-      
-      // Code handling localStorage data (keep as fallback)
-      // [Original localStorage logic here]
-    } catch (error) {
-      console.error('Error loading from localStorage:', error);
-    }
-  };
-  
-  // Load data when component mounts
+  // Redirect if not authenticated
   useEffect(() => {
-    if (isAuthenticated && user?.id) {
-      loadDashboardData();
-    }
-  }, [isAuthenticated, user?.id, dataMigrated]);
-  
-  // Authentication check
-  React.useEffect(() => {
     if (!isAuthenticated) {
       router.push('/auth');
     } else if (userRole !== 'student') {
       router.push(`/${userRole}/dashboard`);
     }
   }, [isAuthenticated, userRole, router]);
+  
+  // Load data on initial load
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      loadDashboardData();
+    }
+  }, [isAuthenticated, user?.id]);
 
   // Animation variants
   const container = {
@@ -291,7 +195,7 @@ export default function StudentDashboard() {
     show: { opacity: 1, y: 0 }
   };
 
-  // Don't render until authenticated
+  // Don't render anything until authenticated
   if (!isAuthenticated || userRole !== 'student') {
     return null;
   }
@@ -331,9 +235,9 @@ export default function StudentDashboard() {
         <motion.div variants={item}>
           <MetricCard
             title="Total Notes"
-            value={notesStats.total.toString()}
+            value={totalNotes.toString()}
             icon={<FileText className="h-4 w-4" />}
-            description={`${notesStats.newThisWeek} new this week`}
+            description={`${newNotesThisWeek} new this week`}
           />
         </motion.div>
         

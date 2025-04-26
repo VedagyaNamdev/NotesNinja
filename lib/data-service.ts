@@ -4,6 +4,38 @@
  * and handles the migration from localStorage to the database.
  */
 
+import { createClient } from '@supabase/supabase-js';
+
+// Create a Supabase client for real-time updates
+export function createSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  
+  return createClient(supabaseUrl, supabaseKey, {
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    }
+  });
+}
+
+// Function to manually trigger a real-time update for notes
+// This can be used to force a refresh when automatic detection fails
+export function notifyNoteChange() {
+  // Only run in browser environment
+  if (typeof window === 'undefined') return;
+  
+  // Create a custom event that our hooks can listen for
+  const event = new CustomEvent('notesninja:note-changed', { 
+    detail: { timestamp: Date.now() }
+  });
+  
+  // Dispatch the event
+  window.dispatchEvent(event);
+  console.log('Manual note change notification dispatched');
+}
+
 // NOTES
 
 export async function fetchNotes() {
@@ -33,7 +65,13 @@ export async function saveNote(note: {
     throw new Error('Failed to save note');
   }
   
-  return response.json();
+  // Get the newly created note from the response
+  const createdNote = await response.json();
+  
+  // Wait a short delay to allow database to propagate changes (as a fallback)
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  return createdNote;
 }
 
 export async function deleteNote(noteId: string) {

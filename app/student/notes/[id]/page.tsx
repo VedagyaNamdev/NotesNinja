@@ -17,6 +17,7 @@ import { Note, NoteType } from '@/types/note';
 import { EditNoteDialog } from '@/components/notes/EditNoteDialog';
 import { getAttachment, openAttachment, downloadAttachment } from '@/lib/services/attachment-service';
 import { createDownloadableFile, isDocumentContent, extractFilenameFromContent } from '@/lib/utils';
+import { notifyNoteChange } from '@/lib/data-service';
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -181,6 +182,10 @@ export default function NotePage() {
     setIsDeleting(true);
     try {
       await deleteNote(note.id);
+      
+      // Manually trigger a real-time update
+      notifyNoteChange();
+      
       toast({
         title: "Note deleted",
         description: "Your note has been successfully deleted.",
@@ -199,6 +204,10 @@ export default function NotePage() {
   
   const handleNoteUpdated = (updatedNote: Note) => {
     setNote(updatedNote);
+    
+    // Manually trigger a real-time update
+    notifyNoteChange();
+    
     toast({
       title: "Note updated",
       description: "The note has been successfully updated.",

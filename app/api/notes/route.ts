@@ -22,7 +22,14 @@ export async function GET() {
     const notes = await getUserNotes(session.user.id);
     
     console.log(`GET /api/notes - Found ${notes.data?.length || 0} notes for user ${session.user.id}`);
-    return NextResponse.json(notes);
+    
+    // Return with headers that prevent caching to ensure fresh data
+    return NextResponse.json(notes, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0, must-revalidate',
+        'Content-Type': 'application/json'
+      }
+    });
   } catch (error: any) {
     console.error('GET /api/notes - Error fetching notes:', error);
     return NextResponse.json(
@@ -82,7 +89,13 @@ export async function POST(request: NextRequest) {
         console.log(`POST /api/notes - Note saved successfully in database, ID: ${note.id}`);
       }
       
-      return NextResponse.json(note);
+      // Return with headers that prevent caching to ensure fresh data
+      return NextResponse.json(note, {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          'Content-Type': 'application/json'
+        }
+      });
     } catch (saveError: any) {
       console.error('POST /api/notes - Error in saveNote function:', saveError);
       return NextResponse.json(

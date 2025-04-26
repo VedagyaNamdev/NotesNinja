@@ -20,6 +20,7 @@ import { CreateNoteDialog } from '@/components/notes/CreateNoteDialog';
 import { ImportNotesDialog } from '@/components/notes/ImportNotesDialog';
 import LoadingScreen from '@/components/LoadingScreen';
 import Link from 'next/link';
+import { useRealtimeNotes } from '@/hooks/useRealtimeNotes';
 
 // Function to extract tags from the content
 const extractTags = (content: string): string[] => {
@@ -31,7 +32,7 @@ const extractTags = (content: string): string[] => {
   return matches.map(match => match.substring(1)); // Remove the # character
 };
 
-// Convert raw notes to notes with metadata
+// Function to process notes to add metadata
 const processNotes = (notes: Note[]): NoteWithMetadata[] => {
   return notes.map(note => ({
     ...note,
@@ -41,10 +42,8 @@ const processNotes = (notes: Note[]): NoteWithMetadata[] => {
 
 const StudentNotes = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [notes, setNotes] = useState<NoteWithMetadata[]>([]);
   const [filteredNotes, setFilteredNotes] = useState<NoteWithMetadata[]>([]);
   const [activeTab, setActiveTab] = useState('all');
-  const [isLoading, setIsLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
   
   const { toast } = useToast();
@@ -52,6 +51,20 @@ const StudentNotes = () => {
   // Authentication check
   const { isAuthenticated, userRole } = useAuth();
   const router = useRouter();
+
+  // Use real-time notes hook instead of manual fetch
+  const { notes: rawNotes, loading: isLoading, error, refresh } = useRealtimeNotes();
+  
+  // Process notes when they change
+  const [notes, setNotes] = useState<NoteWithMetadata[]>([]);
+  
+  useEffect(() => {
+    if (rawNotes && Array.isArray(rawNotes)) {
+      const processed = processNotes(rawNotes);
+      setNotes(processed);
+      setLastSyncTime(new Date().toLocaleTimeString());
+    }
+  }, [rawNotes]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -61,51 +74,16 @@ const StudentNotes = () => {
     }
   }, [isAuthenticated, userRole, router]);
 
-  // Fetch notes from API
+  // Show error toast if there was an error fetching notes
   useEffect(() => {
-    const loadNotes = async () => {
-      if (isAuthenticated && userRole === 'student') {
-        setIsLoading(true);
-        try {
-          const response = await fetchNotes();
-          if (response.error) {
-            toast({
-              title: "Error",
-              description: "Failed to load notes: " + response.error,
-              variant: "destructive"
-            });
-            setNotes([]);
-          } else {
-            const processedNotes = processNotes(response.data);
-            setNotes(processedNotes);
-            setFilteredNotes(processedNotes);
-            
-            // Set last sync time
-            setLastSyncTime(new Date().toLocaleTimeString());
-            
-            // Log warnings but don't show toast messages to users
-            if (response._warning) {
-              console.warn('Notes fetched with limitations:', response._warning);
-            } 
-            else if (response._sessionOnly) {
-              console.warn('Notes are in session-only mode - not saved to database');
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching notes:", error);
-          toast({
-            title: "Error",
-            description: "Failed to load notes. Please try again later.",
-            variant: "destructive"
-          });
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-    
-    loadNotes();
-  }, [isAuthenticated, userRole, toast]);
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load notes. Please try again later.",
+        variant: "destructive"
+      });
+    }
+  }, [error, toast]);
 
   // Filter notes based on search query and active tab
   useEffect(() => {
@@ -141,21 +119,23 @@ const StudentNotes = () => {
     setFilteredNotes(filtered);
   }, [notes, searchQuery, activeTab]);
 
-  // Handle note creation
+  // Handle note creation - no longer needed to manually update the state as it will be handled by the real-time subscription
   const handleNoteCreated = (newNote: Note) => {
-    const processedNote = processNotes([newNote])[0];
-    setNotes(prevNotes => [processedNote, ...prevNotes]);
+    // The new note will be automatically added by the subscription
+    // Just update the last sync time
     setLastSyncTime(new Date().toLocaleTimeString());
   };
 
-  // Handle note deletion
+  // Handle note deletion - no longer needed to manually update the state
   const handleNoteDeleted = (deletedNoteId: string) => {
-    setNotes(prevNotes => prevNotes.filter(note => note.id !== deletedNoteId));
+    // The note will be automatically removed by the subscription
+    // Just update the last sync time
     setLastSyncTime(new Date().toLocaleTimeString());
   };
 
   // Handle favorite toggle
   const handleFavoriteToggle = (updatedNote: NoteWithMetadata) => {
+    // Still need to handle this locally as it might not trigger a DB change
     setNotes(prevNotes => 
       prevNotes.map(note => 
         note.id === updatedNote.id 

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
 import { deleteNote, toggleFavorite } from '@/lib/services/notes-service';
+import { notifyNoteChange } from '@/lib/data-service';
 
 interface NoteItemProps {
   note: NoteWithMetadata;
@@ -39,7 +40,13 @@ export default function NoteItem({ note, index, onDelete, onFavoriteToggle }: No
     setIsDeleting(true);
     try {
       await deleteNote(note.id);
+      
+      // Call the onDelete callback
       onDelete(note.id);
+      
+      // Manually trigger a real-time update
+      notifyNoteChange();
+      
       toast({
         title: "Note deleted",
         description: "Your note has been successfully deleted.",

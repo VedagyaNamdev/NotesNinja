@@ -1,5 +1,6 @@
 import { Note } from '@/types/note';
 import { uploadAttachment } from './attachment-service';
+import { notifyNoteChange } from '@/lib/data-service';
 
 export interface CreateNoteData {
   title: string;
@@ -79,10 +80,18 @@ function syncNoteWithSessionStorage(note: Note) {
 export async function fetchNotes(): Promise<NotesResponse> {
   try {
     console.log('Fetching notes from server');
-    const response = await fetch('/api/notes', {
+    
+    // Add timestamp to URL to prevent caching
+    const timestamp = new Date().getTime();
+    const url = `/api/notes?_t=${timestamp}`;
+    
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       cache: 'no-store', // Don't cache this request
     });
@@ -197,10 +206,18 @@ export async function createNote(data: CreateNoteData): Promise<Note> {
 
     // Create the note with the attachment reference if available
     console.log(`Creating note: ${data.title}${attachmentId ? ' with attachment' : ''}`);
-    const response = await fetch('/api/notes', {
+    
+    // Add timestamp to prevent caching issues
+    const timestamp = new Date().getTime();
+    const url = `/api/notes?_t=${timestamp}`;
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         ...data,
@@ -215,6 +232,11 @@ export async function createNote(data: CreateNoteData): Promise<Note> {
     }
 
     const note = await response.json();
+    
+    // Manually trigger a real-time update to ensure UI syncs
+    if (typeof window !== 'undefined') {
+      notifyNoteChange();
+    }
     
     // Check for the warning property we set in the enhanced saveNote function
     // If the note was saved with a warning (e.g., due to schema limitations), handle it
@@ -276,10 +298,18 @@ export async function updateNote(noteId: string, data: UpdateNoteData): Promise<
     }
 
     console.log(`Updating note ${noteId}${attachmentId ? ' with attachment' : ''}`);
-    const response = await fetch(`/api/notes/${noteId}`, {
+    
+    // Add timestamp to prevent caching issues
+    const timestamp = new Date().getTime(); 
+    const url = `/api/notes/${noteId}?_t=${timestamp}`;
+    
+    const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
       body: JSON.stringify({
         ...data,
@@ -294,6 +324,11 @@ export async function updateNote(noteId: string, data: UpdateNoteData): Promise<
     }
 
     const result = await response.json();
+    
+    // Manually trigger a real-time update to ensure UI syncs
+    if (typeof window !== 'undefined') {
+      notifyNoteChange();
+    }
     
     // Add warning about attachment if there was an error
     if (attachmentError) {
@@ -316,16 +351,38 @@ export async function updateNote(noteId: string, data: UpdateNoteData): Promise<
  */
 export async function deleteNote(noteId: string): Promise<{ success: boolean }> {
   try {
-    const response = await fetch(`/api/notes/${noteId}`, {
+    // Add timestamp to prevent caching issues
+    const timestamp = new Date().getTime();
+    const url = `/api/notes/${noteId}?_t=${timestamp}`;
+
+    const response = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       },
     });
 
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.error || 'Failed to delete note');
+    }
+
+    // Remove deleted note from session storage if it exists
+    if (typeof window !== 'undefined') {
+      try {
+        const sessionData = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        if (sessionData) {
+          const notes = JSON.parse(sessionData);
+          const filteredNotes = notes.filter((note: any) => note.id !== noteId);
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(filteredNotes));
+          console.log(`Removed note ${noteId} from session storage`);
+        }
+      } catch (e) {
+        console.error('Error updating session storage after deletion:', e);
+      }
     }
 
     return { success: true };
