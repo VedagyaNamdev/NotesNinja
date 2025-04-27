@@ -16,6 +16,12 @@ const FALLBACK_ENDPOINTS = [
 // Define content type for better type safety
 type ContentType = 'bullets' | 'summary' | 'keyTerms' | 'flashcards' | 'quiz';
 
+// Interface for quiz options
+interface QuizOptions {
+  difficulty?: 'easy' | 'medium' | 'hard';
+  numQuestions?: number;
+}
+
 // Mock responses for when the API fails
 const MOCK_RESPONSES: Record<ContentType, string> = {
   bullets: `- AI technology continues to advance rapidly in various domains
@@ -109,7 +115,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const requestData = await request.json();
-    const { text, type } = requestData;
+    const { text, type, quizOptions } = requestData;
     
     // Validate request body
     if (!text || !type) {
@@ -141,6 +147,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    
+    // Extract quiz options if provided
+    const options: QuizOptions = quizOptions || {};
+    const difficulty = options.difficulty || 'medium';
+    const numQuestions = options.numQuestions || 5;
     
     // Generate prompt based on content type
     let prompt = '';
@@ -175,7 +186,14 @@ A: [answer text]
 Make sure each flashcard follows this exact format with 'Q:' at the start of the question line and 'A:' at the start of the answer line, and have one blank line between flashcards.`;
         break;
       case "quiz":
-        prompt = `${text}\n\nCreate a quiz with multiple choice questions based on the text above. Format each question exactly as follows:
+        prompt = `${text}\n\nCreate a ${difficulty} difficulty quiz with exactly ${numQuestions} multiple choice questions based on the text above. 
+
+For ${difficulty} difficulty:
+${difficulty === 'easy' ? '- Include straightforward questions that test basic understanding and recall.' : 
+  difficulty === 'medium' ? '- Include questions that require some analysis and deeper understanding.' : 
+  '- Include challenging questions that require critical thinking and advanced understanding.'}
+
+Format each question exactly as follows:
 
 Q: [question text]
 A: [option A]
@@ -184,7 +202,7 @@ C: [option C]
 D: [option D]
 Correct: [correct letter]
 
-Make sure each question follows this exact format, with each option on a new line. Use only A, B, C, or D as the correct answer. Provide at least 5 questions if the text has enough content. Make sure there are no extra blank lines between questions, options, or answers. Each question should test understanding of important concepts from the text.`;
+Make sure each question follows this exact format, with each option on a new line. Use only A, B, C, or D as the correct answer. Make sure there are no extra blank lines between questions, options, or answers. Each question should test understanding of important concepts from the text.`;
         break;
       default:
         prompt = `${text}\n\nSummarize the key points from the above text.`;
@@ -192,95 +210,79 @@ Make sure each question follows this exact format, with each option on a new lin
     
     // Try each endpoint until one works
     let lastError = null;
-    const endpointsToTry = [GEMINI_API_ENDPOINT, ...FALLBACK_ENDPOINTS];
     
-    for (const endpoint of endpointsToTry) {
+    // Start with the primary endpoint
+    let endpoints = [GEMINI_API_ENDPOINT, ...FALLBACK_ENDPOINTS];
+    
+    for (const endpoint of endpoints) {
       try {
-        // Log which endpoint we're trying
-        console.log(`Trying Gemini API endpoint: ${endpoint}`);
+        const requestBody = {
+          contents: [
+            {
+              parts: [
+                { text: prompt }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: type === 'quiz' ? 0.7 : 0.4,
+            topK: 32,
+            topP: 0.95,
+            maxOutputTokens: 4096
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        };
         
-        // Call Gemini API directly
         const response = await fetch(`${endpoint}?key=${apiKey}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt
-                  }
-                ]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 1024,
-            }
-          }),
+          body: JSON.stringify(requestBody)
         });
-        
-        // Log response status
-        console.log(`API response status for ${endpoint}: ${response.status}`);
         
         if (!response.ok) {
           const errorData = await response.json();
-          console.error(`Error with endpoint ${endpoint}:`, errorData);
+          console.error(`Error from ${endpoint}:`, errorData);
           lastError = errorData;
-          // Continue to the next endpoint
-          continue;
+          continue; // Try the next endpoint
         }
         
         const data = await response.json();
         
-        // Extract the generated text from the response
-        if (data.candidates && data.candidates.length > 0 && 
-            data.candidates[0].content && 
-            data.candidates[0].content.parts && 
-            data.candidates[0].content.parts.length > 0) {
-          
-          const generatedText = data.candidates[0].content.parts[0].text;
-          console.log(`Successfully generated ${contentType} content using endpoint ${endpoint}`);
-          
-          return NextResponse.json({ content: generatedText });
-        } else {
-          // Invalid response format, try the next endpoint
-          console.error(`Invalid response format from ${endpoint}:`, data);
-          lastError = { error: 'Invalid response format' };
-          continue;
+        if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content) {
+          console.error(`No content in response from ${endpoint}:`, data);
+          lastError = { error: 'No content in response' };
+          continue; // Try the next endpoint
         }
-      } catch (endpointError) {
-        console.error(`Error with ${endpoint}:`, endpointError);
-        lastError = endpointError;
+        
+        // Extract the generated text
+        const generatedContent = data.candidates[0].content.parts[0].text;
+        
+        // Return the generated content
+        return NextResponse.json({ content: generatedContent });
+      } catch (error) {
+        console.error(`Error with ${endpoint}:`, error);
+        lastError = error;
         // Continue to the next endpoint
-        continue;
       }
     }
     
-    // If we get here, all endpoints failed
-    console.error('All Gemini API endpoints failed - using mock data fallback');
-    
-    // Return mock data if available for this type
-    if (isValidType(contentType) && contentType in MOCK_RESPONSES) {
-      return NextResponse.json({ 
-        content: MOCK_RESPONSES[contentType],
-        isMock: true 
-      });
-    }
-    
+    // If we've tried all endpoints and none worked
+    console.error('All API endpoints failed:', lastError);
     return NextResponse.json(
-      { 
-        error: lastError?.error?.message || 'All API endpoints failed',
-        details: 'Could not generate content using any available API endpoint. Please try again later.'
-      },
+      { error: 'Failed to generate content', details: lastError },
       { status: 500 }
     );
   } catch (error) {
-    console.error('API route error:', error);
+    console.error('Error in generate route:', error);
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

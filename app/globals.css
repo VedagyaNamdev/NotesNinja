@@ -121,7 +121,7 @@
 /* End Custom Toast Styling */
 
 .hover-scale {
-  @apply transition-transform duration-200 hover:scale-105;
+  @apply transition-transform duration-200 hover:scale-102;
 }
 
 @theme inline {

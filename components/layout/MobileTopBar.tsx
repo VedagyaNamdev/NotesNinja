@@ -45,7 +45,7 @@ const MobileTopBar = ({ userRole: propUserRole }: MobileTopBarProps) => {
         
         <div className="flex-1 text-center">
           <div className="text-sm font-semibold">
-            Note Companion
+            Notes Ninja
           </div>
         </div>
         

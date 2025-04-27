@@ -2,7 +2,7 @@ import { Providers } from "@/components/providers";
 import "./globals.css";
 
 export const metadata = {
-  title: "Smart Note Companion",
+  title: "Notes Ninja",
   description: "Take better notes, study smarter",
 };
 
@@ -12,11 +12,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head />
       <body>
-        <Providers>
-          {children}
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

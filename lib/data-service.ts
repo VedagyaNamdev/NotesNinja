@@ -46,6 +46,14 @@ export async function fetchNotes() {
   return response.json();
 }
 
+export async function fetchNoteById(noteId: string) {
+  const response = await fetch(`/api/notes/${noteId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch note');
+  }
+  return response.json();
+}
+
 export async function saveNote(note: {
   title: string;
   content: string;

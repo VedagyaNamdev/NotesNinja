@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Calendar, Clock, Download, Edit, ExternalLink, FileText, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronDown, ChevronUp, Clock, Download, Edit, ExternalLink, FileText, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import LoadingScreen from '@/components/LoadingScreen';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +29,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 // Function to extract tags from the content
 const extractTags = (content: string): string[] => {
@@ -414,102 +420,129 @@ export default function NotePage() {
         </div>
       )}
       
-      <Card className="mb-6">
-        <CardContent className="p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex gap-2 flex-wrap">
-              {tags.map((tag, i) => (
-                <Badge key={i} variant="outline" className="bg-muted/40">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {note.updatedAt && note.updatedAt !== note.createdAt && (
-                <div className="flex items-center">
-                  <Clock className="h-3.5 w-3.5 mr-1" />
-                  Updated: {formatDate(note.updatedAt)}
+      <Accordion type="multiple" defaultValue={["note-content"]}>
+        <AccordionItem value="note-content" className="border-none">
+          <Card className="mb-6">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex gap-2 flex-wrap">
+                  {tags.map((tag, i) => (
+                    <Badge key={i} variant="outline" className="bg-muted/40">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {note.updatedAt && note.updatedAt !== note.createdAt && (
+                    <div className="flex items-center">
+                      <Clock className="h-3.5 w-3.5 mr-1" />
+                      Updated: {formatDate(note.updatedAt)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <Separator className="my-4" />
+              
+              {isDocument && (
+                <div className="flex justify-center mb-4">
+                  <Button
+                    variant="outline"
+                    className="w-full max-w-md py-8"
+                    onClick={handleOpenContent}
+                    disabled={isLoadingAttachment}
+                  >
+                    <FileText className="h-8 w-8 mr-3" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-lg font-semibold">
+                        {isLoadingAttachment ? 'Loading Document...' : 'Open Document'}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        {note.attachmentId ? 
+                          'Click to open the original document in a new tab' : 
+                          'Click to open the document preview in a new tab'}
+                      </span>
+                    </div>
+                    <ExternalLink className="ml-auto h-5 w-5" />
+                  </Button>
                 </div>
               )}
-            </div>
-          </div>
-          
-          <Separator className="my-4" />
-          
-          {isDocument && (
-            <div className="flex justify-center mb-4">
-              <Button
-                variant="outline"
-                className="w-full max-w-md py-8"
-                onClick={handleOpenContent}
-                disabled={isLoadingAttachment}
-              >
-                <FileText className="h-8 w-8 mr-3" />
-                <div className="flex flex-col items-start">
-                  <span className="text-lg font-semibold">
-                    {isLoadingAttachment ? 'Loading Document...' : 'Open Document'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {note.attachmentId ? 
-                      'Click to open the original document in a new tab' : 
-                      'Click to open the document preview in a new tab'}
-                  </span>
+              
+              <AccordionTrigger className="py-2 hover:no-underline">
+                <h3 className="text-lg font-medium">Note Content</h3>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="prose dark:prose-invert max-w-none mt-3">
+                  {/* Simple rendering of note content - could be enhanced with markdown */}
+                  <div style={{ whiteSpace: 'pre-wrap' }}>
+                    {note.content}
+                  </div>
                 </div>
-                <ExternalLink className="ml-auto h-5 w-5" />
-              </Button>
-            </div>
-          )}
-          
-          <div className="prose dark:prose-invert max-w-none">
-            {/* Simple rendering of note content - could be enhanced with markdown */}
-            <div style={{ whiteSpace: 'pre-wrap' }}>
-              {note.content}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      
-      {note.summary && (
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-3">Summary</h3>
-            <Separator className="mb-4" />
-            <div className="prose dark:prose-invert max-w-none">
-              <div style={{ whiteSpace: 'pre-wrap' }}>
-                {note.summary}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {note.keyTerms && (
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-3">Key Terms</h3>
-            <Separator className="mb-4" />
-            <div className="prose dark:prose-invert max-w-none">
-              <div style={{ whiteSpace: 'pre-wrap' }}>
-                {note.keyTerms}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {note.bullets && (
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-3">Bullet Points</h3>
-            <Separator className="mb-4" />
-            <div className="prose dark:prose-invert max-w-none">
-              <div style={{ whiteSpace: 'pre-wrap' }}>
-                {note.bullets}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              </AccordionContent>
+            </CardContent>
+          </Card>
+        </AccordionItem>
+        
+        {note.summary && (
+          <AccordionItem value="summary" className="border-none">
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <AccordionTrigger className="py-2 hover:no-underline">
+                  <h3 className="text-lg font-medium">Summary</h3>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <Separator className="mb-4 mt-2" />
+                  <div className="prose dark:prose-invert max-w-none">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {note.summary}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </CardContent>
+            </Card>
+          </AccordionItem>
+        )}
+        
+        {note.keyTerms && (
+          <AccordionItem value="key-terms" className="border-none">
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <AccordionTrigger className="py-2 hover:no-underline">
+                  <h3 className="text-lg font-medium">Key Terms</h3>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <Separator className="mb-4 mt-2" />
+                  <div className="prose dark:prose-invert max-w-none">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {note.keyTerms}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </CardContent>
+            </Card>
+          </AccordionItem>
+        )}
+        
+        {note.bullets && (
+          <AccordionItem value="bullet-points" className="border-none">
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <AccordionTrigger className="py-2 hover:no-underline">
+                  <h3 className="text-lg font-medium">Bullet Points</h3>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <Separator className="mb-4 mt-2" />
+                  <div className="prose dark:prose-invert max-w-none">
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {note.bullets}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </CardContent>
+            </Card>
+          </AccordionItem>
+        )}
+      </Accordion>
     </>
   );
 } 

@@ -112,7 +112,7 @@ export default function AuthPage() {
               transition={{ delay: 0.1 }}
             >
               <CardTitle className="text-2xl font-bold tracking-tight">
-                Smart Note Companion
+                Notes Ninja
               </CardTitle>
               <CardDescription className="text-muted-foreground">
                 {step === 'role' 

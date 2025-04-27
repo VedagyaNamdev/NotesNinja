@@ -280,7 +280,7 @@ if (!isAuthenticated || userRole !== 'student') {
                 <CardHeader>
                   <CardTitle>Appearance Settings</CardTitle>
                   <CardDescription>
-                    Customize how Smart Note Companion looks for you.
+                    Customize how Notes Ninja looks for you.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">

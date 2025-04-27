@@ -83,7 +83,7 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
               <GraduationCap className="h-6 w-6 text-primary" /> : 
               <Users className="h-6 w-6 text-primary" />
             }
-            <span className="font-bold text-lg">Note Companion</span>
+            <span className="font-bold text-lg">Notes Ninja</span>
           </div>
         )}
         <Button 

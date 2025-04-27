@@ -29,9 +29,10 @@ export interface QuizQuestion {
 interface QuizComponentProps {
   content: string;
   onComplete?: (score: number, total: number) => void;
+  difficulty?: 'easy' | 'medium' | 'hard';
 }
 
-export default function QuizComponent({ content, onComplete }: QuizComponentProps) {
+export default function QuizComponent({ content, onComplete, difficulty = 'medium' }: QuizComponentProps) {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
@@ -315,46 +316,24 @@ export default function QuizComponent({ content, onComplete }: QuizComponentProp
     
     return (
       <Card className="w-full">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Quiz Results</CardTitle>
-          <CardDescription>{resultMessage}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex justify-center">
-            <div className="relative w-32 h-32 flex items-center justify-center">
-              <svg className="w-full h-full" viewBox="0 0 100 100">
-                <circle
-                  className="text-muted-foreground stroke-current"
-                  strokeWidth="8"
-                  fill="transparent"
-                  r="40"
-                  cx="50"
-                  cy="50"
-                />
-                <circle
-                  className="text-primary stroke-current"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  fill="transparent"
-                  r="40"
-                  cx="50"
-                  cy="50"
-                  strokeDasharray={`${percentage * 2.51} 251`}
-                  strokeDashoffset="0"
-                  transform="rotate(-90 50 50)"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center text-3xl font-bold">
-                {percentage}%
-              </div>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>{resultMessage}</CardTitle>
+            <div className="bg-primary/10 text-primary px-2 py-1 rounded text-xs font-medium uppercase">
+              {difficulty} difficulty
             </div>
           </div>
-          
-          <div className="text-center space-y-2">
-            <p className="font-medium">Your score: {score}/{questions.length}</p>
-            <p className="text-sm text-muted-foreground">{resultDescription}</p>
+          <CardDescription>{resultDescription}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col items-center gap-2 py-4">
+            <div className="text-4xl font-bold">{percentage}%</div>
+            <p className="text-muted-foreground text-sm">
+              You got {score} out of {questions.length} questions correct.
+            </p>
+            <Progress value={percentage} className="h-2 w-full max-w-md mt-2" />
           </div>
-          
+
           <div className="grid grid-cols-2 gap-3 pt-4">
             <Button 
               variant="outline" 
