@@ -145,7 +145,7 @@ export default function StudentDashboard() {
         
         // Count quizzes from past week
         completedThisWeek = quizResults.filter((quiz: any) => 
-          quiz.date && new Date(quiz.date) > oneWeekAgo
+          quiz.createdAt && new Date(quiz.createdAt) > oneWeekAgo
         ).length;
       }
       

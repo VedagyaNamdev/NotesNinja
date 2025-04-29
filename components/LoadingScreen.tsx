@@ -64,7 +64,7 @@ export default function LoadingScreen({ show, delay = 1000 }: LoadingScreenProps
               transition={{ delay: 0.3 }}
               className="mt-6 text-xl font-medium text-foreground"
             >
-              Loading your dashboard...
+              Loading...Please wait
             </motion.h2>
           </div>
         </motion.div>

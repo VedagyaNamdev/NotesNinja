@@ -188,23 +188,22 @@ export default function QuizComponent({ content, onComplete, difficulty = 'mediu
     if (quizCompleted || selectedAnswers[currentQuestionIndex]) return;
     
     // Update selected answers
-    setSelectedAnswers(prev => ({
-      ...prev,
+    const newAnswers = {
+      ...selectedAnswers,
       [currentQuestionIndex]: key
-    }));
+    };
+    setSelectedAnswers(newAnswers);
     
-    // Show feedback animation
-    if (key === questions[currentQuestionIndex]?.correct) {
-      // Correct answer
-      setTimeout(() => {
-        // Move to next question after a short delay
-        if (currentQuestionIndex < questions.length - 1) {
-          setCurrentQuestionIndex(prev => prev + 1);
-        } else {
-          finishQuiz();
-        }
-      }, 750);
-    }
+    // Show feedback animation for a short delay
+    setTimeout(() => {
+      // Move to next question after a short delay
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(prev => prev + 1);
+      } else {
+        // For the last question, finish the quiz with the updated answers
+        finishQuiz(newAnswers);
+      }
+    }, key === questions[currentQuestionIndex]?.correct ? 750 : 500);
   };
   
   const moveToNextQuestion = () => {
@@ -221,11 +220,12 @@ export default function QuizComponent({ content, onComplete, difficulty = 'mediu
     }
   };
   
-  const finishQuiz = () => {
-    // Calculate score
-    const quizScore = Object.entries(selectedAnswers).reduce((acc, [questionIndex, answer]) => {
-      const question = questions[parseInt(questionIndex)];
-      return question ? acc + (question.correct === answer ? 1 : 0) : acc;
+  const finishQuiz = (finalAnswers = selectedAnswers) => {
+    // Calculate score - count all correct answers
+    const quizScore = Object.entries(finalAnswers).reduce((acc, [index, answer]) => {
+      const questionIndex = parseInt(index);
+      const question = questions[questionIndex];
+      return acc + (question && answer === question.correct ? 1 : 0);
     }, 0);
     
     setScore(quizScore);
@@ -446,7 +446,7 @@ export default function QuizComponent({ content, onComplete, difficulty = 'mediu
           <CardTitle>Quiz</CardTitle>
           <span className="text-sm text-muted-foreground">{currentQuestionIndex + 1} / {questions.length}</span>
         </div>
-        <Progress value={(currentQuestionIndex + 1) / questions.length * 100} className="h-2" />
+        <Progress value={(answeredCount / questions.length) * 100} className="h-2" />
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="font-medium text-lg">{currentQuestion.question}</div>
