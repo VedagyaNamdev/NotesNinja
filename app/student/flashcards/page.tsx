@@ -1145,11 +1145,9 @@ export default function StudentFlashcards() {
               transition={{ duration: 0.3, delay: 0.1 }}
             >
               {/* Note Selector for Flashcards */}
-              <Card className="mb-4">
-                <CardContent className="p-3 sm:p-6">
-                  <FlashcardNoteSelector onNoteSelected={handleFlashcardNoteSelected} />
-                </CardContent>
-              </Card>
+              <div className="mb-6">
+                <FlashcardNoteSelector onNoteSelected={handleFlashcardNoteSelected} />
+              </div>
               
               <Card>
                 <CardContent className="p-3 sm:p-6">
@@ -1235,16 +1233,21 @@ export default function StudentFlashcards() {
               <div className="space-y-4">
                 <h3 className="text-base sm:text-lg font-medium">Generate Quiz</h3>
                 
-                {/* Note selector for quiz generation */}
-                <div className="mb-4">
-                  <NoteSelector onNoteSelected={handleNoteSelected} />
+                {/* Note selector and quiz options in a grid layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Note selector for quiz generation */}
+                  <div>
+                    <NoteSelector onNoteSelected={handleNoteSelected} />
+                  </div>
+                  
+                  {/* Quiz options selector */}
+                  <div>
+                    <QuizOptionsSelector 
+                      options={quizOptions} 
+                      onChange={setQuizOptions} 
+                    />
+                  </div>
                 </div>
-                
-                {/* Quiz options selector */}
-                <QuizOptionsSelector 
-                  options={quizOptions} 
-                  onChange={setQuizOptions} 
-                />
                 
                 {isUsingNoteForQuiz && (
                   <div className="bg-primary/10 p-4 rounded-md mb-4">

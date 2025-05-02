@@ -18,7 +18,6 @@ import { useToast } from '@/hooks/use-toast';
 import NoteItem from '@/components/notes/NoteItem';
 import { CreateNoteDialog } from '@/components/notes/CreateNoteDialog';
 import { ImportNotesDialog } from '@/components/notes/ImportNotesDialog';
-import LoadingScreen from '@/components/LoadingScreen';
 import Link from 'next/link';
 import { useRealtimeNotes } from '@/hooks/useRealtimeNotes';
 
@@ -152,15 +151,12 @@ const StudentNotes = () => {
   }
 
   return (
-    <>
+    <div className="container mx-auto px-4 py-8">
       <PageHeader 
         title="My Notes" 
         description="Search and browse through all your uploaded notes."
       />
       
-      {isLoading ? (
-        <LoadingScreen show={true} />
-      ) : (
       <div className="space-y-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -188,13 +184,13 @@ const StudentNotes = () => {
             >
               {filteredNotes.length > 0 ? (
                 filteredNotes.map((note, index) => (
-                    <NoteItem 
-                      key={note.id}
-                      note={note} 
-                      index={index} 
-                      onDelete={handleNoteDeleted}
-                      onFavoriteToggle={handleFavoriteToggle}
-                    />
+                  <NoteItem 
+                    key={note.id}
+                    note={note} 
+                    index={index} 
+                    onDelete={handleNoteDeleted}
+                    onFavoriteToggle={handleFavoriteToggle}
+                  />
                 ))
               ) : (
                 <div className="text-center py-10">
@@ -203,11 +199,11 @@ const StudentNotes = () => {
                   </div>
                   <h3 className="font-medium text-lg">No notes found</h3>
                   <p className="text-muted-foreground mt-1">
-                      {notes.length === 0 
-                        ? "You haven't created any notes yet. Create your first note to get started."
-                        : activeTab === 'favorites'
-                          ? "You don't have any favorite notes yet. Click the star icon on a note to add it to favorites."
-                          : "Try adjusting your search or filters"}
+                    {notes.length === 0 
+                      ? "You haven't created any notes yet. Create your first note to get started."
+                      : activeTab === 'favorites'
+                        ? "You don't have any favorite notes yet. Click the star icon on a note to add it to favorites."
+                        : "Try adjusting your search or filters"}
                   </p>
                 </div>
               )}
@@ -220,16 +216,15 @@ const StudentNotes = () => {
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-              Last synchronized: {lastSyncTime ? `Today at ${lastSyncTime}` : 'Never'}
+            Last synchronized: {lastSyncTime ? `Today at ${lastSyncTime}` : 'Never'}
           </div>
           <div className="flex gap-3">
-              <ImportNotesDialog onNoteImported={handleNoteCreated} />
-              <CreateNoteDialog onNoteCreated={handleNoteCreated} />
-            </div>
+            <ImportNotesDialog onNoteImported={handleNoteCreated} />
+            <CreateNoteDialog onNoteCreated={handleNoteCreated} />
           </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 };
 

@@ -48,7 +48,6 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
     { name: 'Flashcards & Quizzes', icon: <BookOpenText className="h-5 w-5" />, path: '/student/flashcards' },
     { name: 'Revision Tracker', icon: <Calendar className="h-5 w-5" />, path: '/student/revision' },
     { name: 'My Notes', icon: <Search className="h-5 w-5" />, path: '/student/notes' },
-    { name: 'Settings', icon: <Settings className="h-5 w-5" />, path: '/student/settings' },
   ];
 
   const teacherLinks = [
@@ -56,7 +55,6 @@ const AppSidebar = ({ userRole: propUserRole }: AppSidebarProps) => {
     { name: 'Upload Material', icon: <Library className="h-5 w-5" />, path: '/teacher/upload' },
     { name: 'Test Generator', icon: <FlaskConical className="h-5 w-5" />, path: '/teacher/test-generator' },
     { name: 'My Tests', icon: <ClipboardList className="h-5 w-5" />, path: '/teacher/tests' },
-    { name: 'Settings', icon: <Settings className="h-5 w-5" />, path: '/teacher/settings' },
   ];
 
   const links = userRole === 'student' ? studentLinks : teacherLinks;

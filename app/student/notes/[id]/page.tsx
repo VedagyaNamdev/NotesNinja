@@ -10,7 +10,6 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Calendar, ChevronDown, ChevronUp, Clock, Download, Edit, ExternalLink, FileText, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
-import LoadingScreen from '@/components/LoadingScreen';
 import { useToast } from '@/hooks/use-toast';
 import { deleteNote } from '@/lib/services/notes-service';
 import { Note, NoteType } from '@/types/note';
@@ -327,10 +326,6 @@ export default function NotePage() {
   // Don't render until authenticated
   if (!isAuthenticated || userRole !== 'student') {
     return null;
-  }
-  
-  if (isLoading) {
-    return <LoadingScreen show={true} />;
   }
   
   if (!note) {

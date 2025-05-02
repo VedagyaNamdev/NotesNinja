@@ -80,9 +80,6 @@ const MobileTopBar = ({ userRole: propUserRole }: MobileTopBarProps) => {
             <DropdownMenuItem asChild>
               <Link href="/profile">View Profile</Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href={`/${userRole}/settings`}>Settings</Link>
-            </DropdownMenuItem>
             <DropdownMenuItem 
               className="text-red-500 focus:text-red-500" 
               onClick={handleLogout}

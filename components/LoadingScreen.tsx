@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
+
+// Dynamically import Lottie with no SSR
+const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
 interface LoadingScreenProps {
   show: boolean;
@@ -8,6 +12,14 @@ interface LoadingScreenProps {
 
 export default function LoadingScreen({ show, delay = 1000 }: LoadingScreenProps) {
   const [shouldShow, setShouldShow] = useState(show);
+  const [loadingAnimation, setLoadingAnimation] = useState(null);
+  
+  // Load the animation data on the client side
+  useEffect(() => {
+    import('@/public/animations/loading.json').then(module => {
+      setLoadingAnimation(module.default);
+    });
+  }, []);
   
   // Ensure the loading screen stays visible for at least the delay time
   useEffect(() => {
@@ -33,30 +45,15 @@ export default function LoadingScreen({ show, delay = 1000 }: LoadingScreenProps
           className="fixed inset-0 z-50 flex items-center justify-center bg-background"
         >
           <div className="flex flex-col items-center">
-            <div className="relative w-16 h-16">
-              <motion.div
-                animate={{
-                  scale: [1, 1.2, 1],
-                  rotate: [0, 180, 360],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-                className="absolute inset-0 border-4 border-primary rounded-full opacity-30"
-              />
-              <motion.div
-                animate={{
-                  rotate: [0, 360],
-                }}
-                transition={{
-                  duration: 1.5,
-                  repeat: Infinity,
-                  ease: "linear"
-                }}
-                className="absolute inset-0 border-4 border-t-primary border-l-transparent border-r-transparent border-b-transparent rounded-full"
-              />
+            <div className="w-64 h-64">
+              {loadingAnimation && (
+                <Lottie
+                  animationData={loadingAnimation}
+                  loop={true}
+                  autoplay={true}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              )}
             </div>
             <motion.h2
               initial={{ opacity: 0, y: 10 }}
